@@ -1,0 +1,76 @@
+{
+  "results": [
+    {
+      "ok": true,
+      "msg": "fab exists"
+    },
+    {
+      "ok": true,
+      "msg": ".fab exists"
+    },
+    {
+      "ok": true,
+      "msg": "starts empty"
+    },
+    {
+      "ok": true,
+      "msg": "empty: new todo appears after #fab click"
+    },
+    {
+      "ok": true,
+      "msg": "empty: textarea unlocked / editing"
+    },
+    {
+      "ok": true,
+      "msg": "empty: textarea focused"
+    },
+    {
+      "ok": true,
+      "msg": "many: todo count +1 after .fab click (no scroll-kill)"
+    },
+    {
+      "ok": true,
+      "msg": "many: textarea unlocked and focused"
+    },
+    {
+      "ok": true,
+      "msg": "many: newest is blank draft"
+    },
+    {
+      "ok": true,
+      "msg": "touch: #fab tap adds + unlocks"
+    },
+    {
+      "ok": true,
+      "msg": "empty-state click does not create"
+    },
+    {
+      "ok": true,
+      "msg": "tapCatcher click does not create"
+    }
+  ],
+  "emptyAfter": {
+    "todos": 1,
+    "items": 1,
+    "editing": true,
+    "unlocked": true,
+    "activeTa": true,
+    "empty": false
+  },
+  "manyAfter": {
+    "before": 11,
+    "todos": 12,
+    "items": 12,
+    "editing": true,
+    "unlocked": true,
+    "activeTa": true,
+    "lastText": "",
+    "suppress": 0
+  },
+  "touchAfter": {
+    "before": 11,
+    "todos": 12,
+    "editing": true,
+    "unlocked": true
+  }
+}

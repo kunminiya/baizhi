@@ -1,0 +1,85 @@
+{
+  "ok": true,
+  "checks": [
+    {
+      "name": "api.addTodo",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "api.updateReel",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "api.scheduleReel",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_ctx_menu",
+      "pass": true,
+      "detail": "absent"
+    },
+    {
+      "name": "empty_hint_longpress",
+      "pass": true,
+      "detail": "点 + 新建 · 长按划线完成"
+    },
+    {
+      "name": "fab_creates_item",
+      "pass": true,
+      "detail": "{\"items\":1,\"hasTextarea\":true,\"focused\":true,\"tag\":\"TEXTAREA\",\"className\":\"todo-text\",\"stored\":[{\"id\":\"mw1y0ok6-ysfxhft\",\"text\":\"\",\"createdAt\":1793786249814,\"completed\":false,\"completedAt\":null}]}"
+    },
+    {
+      "name": "fab_uses_textarea",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "fab_focuses_textarea",
+      "pass": true,
+      "detail": "{\"tag\":\"TEXTAREA\",\"className\":\"todo-text\"}"
+    },
+    {
+      "name": "typing_in_textarea",
+      "pass": true,
+      "detail": "恢复轻柔飘"
+    },
+    {
+      "name": "typing_persists_storage",
+      "pass": true,
+      "detail": "恢复轻柔飘"
+    },
+    {
+      "name": "enter_blur_keeps_text",
+      "pass": true,
+      "detail": "{\"text\":\"恢复轻柔飘\",\"completed\":false}"
+    },
+    {
+      "name": "longpress_marks_done",
+      "pass": true,
+      "detail": "{\"hasDoneClass\":true,\"completed\":true,\"color\":\"rgb(52, 199, 89)\",\"decoration\":\"line-through\"}"
+    },
+    {
+      "name": "done_strikethrough_style",
+      "pass": true,
+      "detail": "line-through"
+    },
+    {
+      "name": "updateReel_no_crash",
+      "pass": true,
+      "detail": "true"
+    },
+    {
+      "name": "no_armDraftGuard_in_dom",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no_todo_display_mode",
+      "pass": true,
+      "detail": "{\"armDraftGuard\":false,\"ephemeral\":false,\"todoDisplay\":false,\"dualMode\":false}"
+    }
+  ]
+}

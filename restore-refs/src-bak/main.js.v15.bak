@@ -1,0 +1,865 @@
+import './style.css'
+
+import { Capacitor } from '@capacitor/core'
+
+async function hapticLight() {
+  if (!Capacitor.isNativePlatform()) return
+  try {
+    const { Haptics, ImpactStyle } = await import('@capacitor/haptics')
+    await Haptics.impact({ style: ImpactStyle.Light })
+  } catch {}
+}
+
+async function setupNativeChrome() {
+  if (!Capacitor.isNativePlatform()) return
+  try {
+    const { StatusBar, Style } = await import('@capacitor/status-bar')
+    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches
+    await StatusBar.setOverlaysWebView({ overlay: true })
+    await StatusBar.setStyle({ style: dark ? Style.Dark : Style.Light })
+    await StatusBar.setBackgroundColor({ color: dark ? '#0c0c0c' : '#f7f5f2' })
+  } catch {}
+  try {
+    const { Keyboard } = await import('@capacitor/keyboard')
+    Keyboard.setAccessoryBarVisible({ isVisible: false }).catch(() => {})
+  } catch {}
+}
+
+setupNativeChrome()
+
+const STORAGE_KEY = 'baizhi.todos.v1'
+const TZ = 'Asia/Hong_Kong'
+const REDUCE_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+/** @typedef {{ id: string, text: string, createdAt: number, completed: boolean, completedAt?: number|null }} Todo */
+
+const app = document.querySelector('#app')
+
+app.innerHTML = `
+  <header class="app-header">
+    <div class="app-meta" id="countMeta"></div>
+  </header>
+  <main class="paper-scroll" id="paper" aria-label="白纸待办">
+    <div class="empty-state" id="empty">
+      <div class="empty-glyph" aria-hidden="true"></div>
+      <p class="empty-title">轻写下第一件事</p>
+      <p class="empty-sub">点 + 新建 · 双击划线 · 长按菜单</p>
+    </div>
+    <ul class="todo-list" id="list"></ul>
+    <div class="tap-catcher" id="tapCatcher" aria-hidden="true"></div>
+  </main>
+  <button class="fab" id="fab" type="button" aria-label="新建">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+      <path d="M12 5v14M5 12h14"/>
+    </svg>
+  </button>
+`
+
+const listEl = /** @type {HTMLUListElement} */ (document.getElementById('list'))
+const emptyEl = /** @type {HTMLElement} */ (document.getElementById('empty'))
+const countMeta = /** @type {HTMLElement} */ (document.getElementById('countMeta'))
+const paper = /** @type {HTMLElement} */ (document.getElementById('paper'))
+const fab = /** @type {HTMLButtonElement} */ (document.getElementById('fab'))
+const tapCatcher = /** @type {HTMLElement} */ (document.getElementById('tapCatcher'))
+
+/** Floating long-press context menu — horizontal Android-style pill toolbar */
+const ctxMenu = document.createElement('div')
+ctxMenu.className = 'ctx-menu'
+ctxMenu.hidden = true
+ctxMenu.setAttribute('role', 'menu')
+ctxMenu.innerHTML = `<button type="button" class="ctx-item" data-action="edit" role="menuitem">编辑</button>`
+document.body.appendChild(ctxMenu)
+
+function fillCtxMenu(todo) {
+  const done = Boolean(todo?.completed)
+  const toggleLabel = done ? '取消完成' : '完成'
+  ctxMenu.innerHTML =
+    `<button type="button" class="ctx-item" data-action="edit" role="menuitem">编辑</button>` +
+    `<button type="button" class="ctx-item" data-action="toggle" role="menuitem">${toggleLabel}</button>` +
+    `<button type="button" class="ctx-item ctx-item-danger" data-action="delete" role="menuitem">删除</button>`
+}
+
+/** @type {Todo[]} */
+let todos = load()
+let reelRaf = 0
+/** @type {string|null} */
+let ctxTargetId = null
+/** @type {WeakMap<HTMLTextAreaElement, () => void>} */
+const exitEditByTa = new WeakMap()
+/** While >0, paper scroll must not blur the active editor (FAB addTodo scrolls). */
+let suppressScrollBlur = 0
+/** Timestamp (ms) until which blank-draft blur must NOT remove / must re-focus. */
+let draftGuardUntil = 0
+/** True while we are driving paper.scrollTo — never blur editors for these scrolls. */
+let programmaticScroll = 0
+
+function beginSuppressScrollBlur(ms = 2200) {
+  suppressScrollBlur += 1
+  window.setTimeout(() => {
+    suppressScrollBlur = Math.max(0, suppressScrollBlur - 1)
+  }, ms)
+}
+
+function armDraftGuard(ms = 2500) {
+  draftGuardUntil = Math.max(draftGuardUntil, Date.now() + ms)
+  beginSuppressScrollBlur(ms)
+}
+
+function inDraftGuard() {
+  return suppressScrollBlur > 0 || Date.now() < draftGuardUntil
+}
+
+function paperScrollTo(options) {
+  programmaticScroll += 1
+  beginSuppressScrollBlur(2200)
+  try {
+    paper.scrollTo(options)
+  } finally {
+    // Android WebView may emit scroll asynchronously after scrollTo returns
+    window.setTimeout(() => {
+      programmaticScroll = Math.max(0, programmaticScroll - 1)
+    }, 400)
+  }
+}
+
+function clearDomSelection() {
+  try {
+    const sel = window.getSelection?.()
+    sel?.removeAllRanges()
+  } catch {}
+  // Collapse selection on any locked/idle todo textarea (kills Android selection handles)
+  document.querySelectorAll('textarea.todo-text').forEach((ta) => {
+    if (!(ta instanceof HTMLTextAreaElement)) return
+    if (!ta.readOnly && ta.classList.contains('is-unlocked')) return
+    try {
+      const pos = ta.selectionEnd ?? ta.value.length
+      if (ta.selectionStart !== ta.selectionEnd || ta.selectionStart !== pos) {
+        ta.setSelectionRange(pos, pos)
+      }
+    } catch {}
+  })
+}
+
+/** Keep selectionStart === selectionEnd while locked (no box-select / handles). */
+function collapseLockedTextareas() {
+  document.querySelectorAll('textarea.todo-text').forEach((ta) => {
+    if (!(ta instanceof HTMLTextAreaElement)) return
+    if (!ta.readOnly && ta.classList.contains('is-unlocked')) return
+    try {
+      if (ta.selectionStart !== ta.selectionEnd) {
+        const pos = ta.selectionEnd ?? ta.value.length
+        ta.setSelectionRange(pos, pos)
+      }
+    } catch {}
+  })
+}
+
+function lockTextarea(ta) {
+  ta.readOnly = true
+  ta.tabIndex = -1
+  ta.setAttribute('readonly', '')
+  ta.classList.remove('is-unlocked')
+}
+
+function unlockTextarea(ta) {
+  ta.readOnly = false
+  ta.tabIndex = 0
+  ta.removeAttribute('readonly')
+  ta.classList.add('is-unlocked')
+}
+
+function hideCtxMenu() {
+  ctxMenu.hidden = true
+  ctxMenu.classList.remove('is-open')
+  ctxTargetId = null
+  document.querySelectorAll('.todo-item.is-menu-open').forEach((el) => {
+    el.classList.remove('is-menu-open')
+  })
+}
+
+function showCtxMenu(li, clientX, clientY) {
+  hideCtxMenu()
+  ctxTargetId = li.dataset.id || null
+  const todo = todos.find((x) => x.id === ctxTargetId)
+  fillCtxMenu(todo)
+  li.classList.add('is-menu-open')
+  ctxMenu.hidden = false
+  ctxMenu.classList.add('is-open')
+  // Measure after paint so horizontal pill width is accurate
+  const pad = 10
+  const vvTop = window.visualViewport?.offsetTop || 0
+  // Prefer above the pressed point (Android selection toolbar style); fall below if needed
+  ctxMenu.style.left = '0px'
+  ctxMenu.style.top = '0px'
+  const mw = Math.max(ctxMenu.offsetWidth || 160, 120)
+  const mh = Math.max(ctxMenu.offsetHeight || 40, 36)
+  let left = clientX - mw / 2
+  let top = clientY - mh - 14
+  if (top < pad + vvTop) top = clientY + 14
+  left = Math.max(pad, Math.min(left, window.innerWidth - mw - pad))
+  top = Math.max(pad + vvTop, Math.min(top, window.innerHeight - mh - pad))
+  ctxMenu.style.left = `${left}px`
+  ctxMenu.style.top = `${top}px`
+}
+
+function dismissAllInteraction({ blurActive = true } = {}) {
+  hideCtxMenu()
+  clearDomSelection()
+  if (!blurActive) return
+  const ae = document.activeElement
+  if (ae instanceof HTMLTextAreaElement && ae.classList.contains('todo-text')) {
+    ae.blur()
+  }
+}
+
+function load() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .filter((t) => t && typeof t.id === 'string')
+      .map((t) => ({
+        id: t.id,
+        text: String(t.text ?? ''),
+        createdAt: Number(t.createdAt) || Date.now(),
+        completed: Boolean(t.completed),
+        completedAt: t.completedAt ?? null,
+      }))
+  } catch {
+    return []
+  }
+}
+
+function save() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(todos))
+}
+
+function uid() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`
+}
+
+function partsInHK(ms) {
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+  const bits = Object.fromEntries(
+    fmt.formatToParts(new Date(ms)).filter((p) => p.type !== 'literal').map((p) => [p.type, p.value]),
+  )
+  return {
+    year: bits.year,
+    month: bits.month,
+    day: bits.day,
+    hour: bits.hour === '24' ? '00' : bits.hour,
+    minute: bits.minute,
+    ymd: `${bits.year}-${bits.month}-${bits.day}`,
+  }
+}
+
+function todayYmd() {
+  return partsInHK(Date.now()).ymd
+}
+
+function yesterdayYmd() {
+  return partsInHK(Date.now() - 86400000).ymd
+}
+
+/** Format like: 今天 14:32 / 昨天 09:01 / 11-03 18:20 */
+function formatStamp(ms) {
+  const p = partsInHK(ms)
+  const time = `${p.hour}:${p.minute}`
+  const ymd = p.ymd
+  if (ymd === todayYmd()) return `今天 ${time}`
+  if (ymd === yesterdayYmd()) return `昨天 ${time}`
+  return `${p.month}-${p.day} ${time}`
+}
+
+function updateMeta() {
+  const open = todos.filter((t) => !t.completed).length
+  const done = todos.filter((t) => t.completed).length
+  if (todos.length === 0) {
+    countMeta.textContent = ''
+  } else {
+    countMeta.innerHTML = `<span class="meta-open">未完成 ${open}</span><span class="meta-sep">·</span><span class="meta-done">已完成 ${done}</span>`
+  }
+  emptyEl.classList.toggle('is-visible', todos.length === 0)
+}
+
+function autoGrow(el) {
+  el.style.height = 'auto'
+  el.style.height = `${el.scrollHeight}px`
+}
+
+function clamp(n, a, b) {
+  return Math.max(a, Math.min(b, n))
+}
+
+function smoothstep(t) {
+  const x = clamp(t, 0, 1)
+  return x * x * (3 - 2 * x)
+}
+
+/**
+ * Track into the distance: items ride a centered rail toward the TRUE screen
+ * top (status-bar / absolute edge) — foreshorten earlier, bigger near base.
+ * Transform on .todo-face keeps hit targets stable.
+ *
+ * Knobs (v12 = v8 vanish/scale + v7 soft-float opacity/blur):
+ *  nearYFrac=0.91  writing zone
+ *  farY = 0        absolute screen top (status bar)
+ *  alongCurve=1.28 earlier shrink (was ~2.55)
+ *  nearScale=1.22  bigger bottom/newest
+ *  farScaleDrop=0.74
+ *  farOpacityDrop=0.78  soft-float (was 0.86)
+ *  blurStart=0.62   soft-float (was 0.55)
+ */
+function updateReel() {
+  reelRaf = 0
+  if (REDUCE_MOTION) {
+    listEl.querySelectorAll('.todo-item').forEach((li) => {
+      const el = /** @type {HTMLElement} */ (li)
+      const face = /** @type {HTMLElement|null} */ (el.querySelector('.todo-face'))
+      if (face) {
+        face.style.transform = ''
+        face.style.filter = ''
+      }
+      el.style.opacity = el.classList.contains('is-done') ? '0.88' : '1'
+    })
+    return
+  }
+
+  const view = paper.getBoundingClientRect()
+  const viewH = Math.max(view.height, 1)
+  // Near end of the track (writing zone) sits low
+  const nearY = view.top + viewH * 0.91
+  // Far end = absolute screen top (status bar / true edge), not mid-header
+  const farY = 0
+
+  listEl.querySelectorAll('.todo-item').forEach((li) => {
+    const el = /** @type {HTMLElement} */ (li)
+    const face = /** @type {HTMLElement} */ (el.querySelector('.todo-face') || el)
+    const r = el.getBoundingClientRect()
+    if (r.bottom < farY - 100 || r.top > view.bottom + 100) {
+      el.style.opacity = '0'
+      return
+    }
+
+    const mid = r.top + r.height * 0.5
+    // Progress along the track: 0 = near (bottom), 1 = far (absolute top)
+    const along = clamp((nearY - mid) / Math.max(nearY - farY, 1), 0, 1)
+    // Earlier foreshortening: lower power so lower band already has a clear size gradient
+    // Mix a linear term so bottom items aren't a flat same-size zone
+    const far = along * 0.38 + Math.pow(along, 1.28) * 0.62
+    const farS = smoothstep(far)
+
+    // Below the near band: slight tip the other way
+    const below = smoothstep(clamp((mid - nearY) / (viewH * 0.2), 0, 1))
+
+    // Near base >1 (v8 larger bottom); shrink uses early-along curve above
+    // Soft-float intensity restored from good v7: gentler opacity/blur falloff
+    const scale = 1.22 - farS * 0.74 - below * 0.04
+    const opacityBase = 1 - farS * 0.78 - below * 0.1
+    const rotateX = farS * 62 - below * 8
+    const translateZ = -farS * 260 - below * 12
+    const translateY = -farS * 22
+    const blur = farS > 0.62 ? (farS - 0.62) * 2 : 0
+
+    const doneMul = el.classList.contains('is-done') ? 0.9 : 1
+    const opacity = clamp(opacityBase * doneMul, 0.18, 1)
+
+    face.style.transform =
+      `translate3d(0, ${translateY.toFixed(2)}px, ${translateZ.toFixed(2)}px) ` +
+      `rotateX(${rotateX.toFixed(2)}deg) scale(${scale.toFixed(4)})`
+    face.style.filter = blur > 0.04 ? `blur(${blur.toFixed(2)}px)` : ''
+    el.style.opacity = opacity.toFixed(3)
+  })
+}
+
+function scheduleReel() {
+  if (reelRaf) return
+  reelRaf = requestAnimationFrame(updateReel)
+}
+
+function renderItem(todo, { animate = false, startEditing = false } = {}) {
+  const li = document.createElement('li')
+  li.className = `todo-item${todo.completed ? ' is-done' : ''}${animate ? ' is-entering' : ''}`
+  li.dataset.id = todo.id
+
+  li.innerHTML = `
+    <div class="todo-face">
+      <div class="todo-body">
+        <time class="todo-time" datetime="${new Date(todo.createdAt).toISOString()}">${formatStamp(todo.createdAt)}</time>
+        <div class="todo-display" aria-hidden="false"></div>
+        <textarea class="todo-text" rows="1" maxlength="280" placeholder="" enterkeyhint="done" readonly hidden></textarea>
+      </div>
+    </div>
+  `
+
+  const display = /** @type {HTMLElement} */ (li.querySelector('.todo-display'))
+  const textarea = /** @type {HTMLTextAreaElement} */ (li.querySelector('.todo-text'))
+  display.textContent = todo.text
+  textarea.value = todo.text
+  lockTextarea(textarea)
+  // Idle: non-input div only — textarea stays hidden until 编辑 / FAB
+  textarea.hidden = true
+  display.hidden = false
+  autoGrow(textarea)
+
+  const LONG_MS = 480
+  const DOUBLE_MS = 320
+  let longTimer = 0
+  let ptrX = 0
+  let ptrY = 0
+  let longFired = false
+  let lastTapAt = 0
+  let editing = false
+
+  const clearLong = () => {
+    if (longTimer) {
+      clearTimeout(longTimer)
+      longTimer = 0
+    }
+    li.classList.remove('is-longpressing', 'is-pressing')
+  }
+
+  const showDisplayMode = () => {
+    display.textContent = textarea.value
+    display.hidden = false
+    display.setAttribute('aria-hidden', 'false')
+    textarea.hidden = true
+    lockTextarea(textarea)
+  }
+
+  const showEditorMode = () => {
+    textarea.hidden = false
+    display.hidden = true
+    display.setAttribute('aria-hidden', 'true')
+    unlockTextarea(textarea)
+    autoGrow(textarea)
+  }
+
+  const enterEdit = () => {
+    hideCtxMenu()
+    clearDomSelection()
+    // Exit other editors first
+    document.querySelectorAll('.todo-item.is-editing').forEach((other) => {
+      if (other === li) return
+      const ta = other.querySelector('.todo-text')
+      if (ta instanceof HTMLTextAreaElement) ta.blur()
+    })
+    editing = true
+    showEditorMode()
+    li.classList.add('is-editing')
+    // Focus sync (same tick) then again next frame — Android WebView IME after unlock
+    try {
+      textarea.focus({ preventScroll: true })
+    } catch {}
+    requestAnimationFrame(() => {
+      if (!editing) return
+      try {
+        textarea.focus({ preventScroll: true })
+        const len = textarea.value.length
+        textarea.setSelectionRange(len, len)
+      } catch {}
+    })
+  }
+
+  const exitEdit = () => {
+    editing = false
+    showDisplayMode()
+    li.classList.remove('is-editing')
+    clearDomSelection()
+  }
+  exitEditByTa.set(textarea, exitEdit)
+  li.addEventListener('baizhi:enter-edit', () => enterEdit())
+
+  const startLong = (e) => {
+    // While editing, allow normal text interaction (no long/double gestures)
+    if (editing || document.activeElement === textarea) return
+    if (e.pointerType === 'mouse' && e.button !== 0) return
+    longFired = false
+    ptrX = e.clientX
+    ptrY = e.clientY
+    li.classList.add('is-pressing', 'is-longpressing')
+    clearTimeout(longTimer)
+    longTimer = window.setTimeout(() => {
+      longTimer = 0
+      longFired = true
+      lastTapAt = 0 // cancel pending double-tap
+      li.classList.remove('is-longpressing')
+      hapticLight()
+      // Long-press alone: show menu ONLY — never unlock / focus / open keyboard
+      showCtxMenu(li, ptrX, ptrY)
+    }, LONG_MS)
+  }
+
+  li.addEventListener('pointerdown', startLong)
+  li.addEventListener('pointermove', (e) => {
+    if (!longTimer) return
+    const dx = e.clientX - ptrX
+    const dy = e.clientY - ptrY
+    if (dx * dx + dy * dy > 64) clearLong()
+  })
+  li.addEventListener('pointerup', () => {
+    const wasLong = longFired
+    // Short tap only if long timer still pending (not move-cancelled, not already fired)
+    const isShortTap = !!longTimer
+    clearLong()
+    if (wasLong || !isShortTap || editing || document.activeElement === textarea) return
+    const now = performance.now()
+    if (lastTapAt && now - lastTapAt < DOUBLE_MS) {
+      lastTapAt = 0
+      hideCtxMenu()
+      clearDomSelection()
+      hapticLight()
+      toggleDone(todo.id)
+    } else {
+      lastTapAt = now
+      // Single tap: dismiss menu + clear sticky selection (never open keyboard)
+      hideCtxMenu()
+      clearDomSelection()
+    }
+  })
+  li.addEventListener('pointerleave', clearLong)
+  li.addEventListener('pointercancel', clearLong)
+  li.addEventListener('contextmenu', (e) => {
+    e.preventDefault()
+  })
+
+  // Idle surface is the div — kill selection on it always
+  display.addEventListener('selectstart', (e) => e.preventDefault())
+  display.addEventListener('pointerdown', (e) => {
+    // gestures handled on li; never start text selection on display
+    if (e.pointerType !== 'mouse' || e.button === 0) {
+      /* allow li long-press; still block native select */
+    }
+  })
+
+  // Block accidental focus / native selection from single tap while locked
+  textarea.addEventListener('pointerdown', (e) => {
+    if (editing) return
+    // Let the li handler manage gestures; prevent focusing readonly field
+    e.preventDefault()
+  })
+  textarea.addEventListener('selectstart', (e) => {
+    // Always when !editing — hard lock, no box-select / handles
+    if (!editing) e.preventDefault()
+  })
+  // Idle: never allow a non-collapsed selection range (no handles / box-select)
+  textarea.addEventListener('select', () => {
+    if (editing) return
+    try {
+      const pos = textarea.selectionEnd ?? textarea.value.length
+      textarea.setSelectionRange(pos, pos)
+    } catch {}
+  })
+  textarea.addEventListener('selectionchange', () => {
+    if (editing) return
+    try {
+      if (textarea.selectionStart !== textarea.selectionEnd) {
+        const pos = textarea.selectionEnd ?? textarea.value.length
+        textarea.setSelectionRange(pos, pos)
+      }
+    } catch {}
+  })
+
+  textarea.addEventListener('input', () => {
+    autoGrow(textarea)
+    display.textContent = textarea.value
+    const t = todos.find((x) => x.id === todo.id)
+    if (!t) return
+    t.text = textarea.value
+    save()
+    scheduleReel()
+  })
+
+  textarea.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      textarea.blur()
+      clearDomSelection()
+      hideCtxMenu()
+      return
+    }
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      textarea.blur()
+    }
+  })
+
+  textarea.addEventListener('blur', () => {
+    const t = todos.find((x) => x.id === todo.id)
+    if (!t) return
+
+    // Accidental blur from programmatic paper.scrollTo only: re-focus, keep draft.
+    // Intentional dismiss (tap outside) may exit edit during settle, but blank is kept below.
+    if (programmaticScroll > 0) {
+      editing = true
+      li.classList.add('is-editing')
+      showEditorMode()
+      requestAnimationFrame(() => {
+        try {
+          textarea.focus({ preventScroll: true })
+        } catch {}
+      })
+      return
+    }
+
+    t.text = textarea.value.trim()
+    textarea.value = t.text
+    display.textContent = t.text
+    autoGrow(textarea)
+    save()
+    exitEdit()
+    // Blank draft: remove only on real blur outside suppress/guard settle
+    if (!t.text) {
+      if (inDraftGuard()) {
+        // Keep empty row (no flash-remove); user can 编辑 or 删除
+        scheduleReel()
+        return
+      }
+      removeTodo(todo.id)
+      return
+    }
+    scheduleReel()
+  })
+
+  if (animate) {
+    li.addEventListener(
+      'animationend',
+      () => {
+        li.classList.remove('is-entering')
+        scheduleReel()
+      },
+      { once: true },
+    )
+  }
+
+  if (startEditing) {
+    requestAnimationFrame(() => enterEdit())
+  }
+
+
+  return li
+}
+
+function renderAll() {
+  listEl.replaceChildren()
+  const ordered = [...todos].sort((a, b) => a.createdAt - b.createdAt)
+  for (const t of ordered) {
+    listEl.appendChild(renderItem(t))
+  }
+  updateMeta()
+  scheduleReel()
+}
+
+function toggleDone(id) {
+  const t = todos.find((x) => x.id === id)
+  if (!t) return
+  t.completed = !t.completed
+  t.completedAt = t.completed ? Date.now() : null
+  save()
+  const li = listEl.querySelector(`[data-id="${id}"]`)
+  if (!li) {
+    renderAll()
+    return
+  }
+  li.classList.toggle('is-done', t.completed)
+  updateMeta()
+  scheduleReel()
+}
+
+function removeTodo(id) {
+  const idx = todos.findIndex((x) => x.id === id)
+  if (idx < 0) return
+  todos.splice(idx, 1)
+  save()
+  const li = listEl.querySelector(`.todo-item[data-id="${id.replace(/"/g, '')}"]`)
+  if (li) li.remove()
+  updateMeta()
+  scheduleReel()
+}
+
+function addTodo({ focus = true } = {}) {
+  hapticLight()
+  // Keep blank draft alive through scroll/focus/IME settle (Android WebView)
+  if (focus) armDraftGuard(2500)
+  const todo = {
+    id: uid(),
+    text: '',
+    createdAt: Date.now(),
+    completed: false,
+    completedAt: null,
+  }
+  todos.push(todo)
+  save()
+  emptyEl.classList.remove('is-visible')
+  // Focus/unlock FIRST — do not scroll before editor is armed (avoids flash-then-gone)
+  const li = renderItem(todo, { animate: true, startEditing: focus })
+  listEl.appendChild(li)
+  updateMeta()
+  if (focus) {
+    // Enter edit immediately (renderItem also schedules rAF enterEdit)
+    li.dispatchEvent(new CustomEvent('baizhi:enter-edit'))
+  }
+  requestAnimationFrame(() => {
+    const placeNewestLow = (behavior = 'auto') => {
+      const paperRect = paper.getBoundingClientRect()
+      const liRect = li.getBoundingClientRect()
+      const targetMid = paperRect.top + paper.clientHeight * 0.90
+      const itemMid = liRect.top + liRect.height * 0.5
+      const delta = itemMid - targetMid
+      const nextTop = Math.max(0, paper.scrollTop + delta)
+      paperScrollTo({ top: nextTop, behavior })
+    }
+    // Scroll AFTER editor unlock/focus path has started
+    paperScrollTo({ top: paper.scrollHeight, behavior: 'auto' })
+    requestAnimationFrame(() => {
+      placeNewestLow(focus ? 'auto' : 'smooth')
+      scheduleReel()
+    })
+    if (focus) {
+      setTimeout(() => {
+        armDraftGuard(1800)
+        placeNewestLow('auto')
+        scheduleReel()
+        const ta = li.querySelector('textarea.todo-text')
+        if (ta instanceof HTMLTextAreaElement) {
+          try {
+            ta.focus({ preventScroll: true })
+          } catch {}
+        }
+      }, 180)
+    }
+  })
+  return todo
+}
+
+function activateFab(e) {
+  // FAB is the sole create path (v13+: blank paper must not create)
+  e?.preventDefault?.()
+  e?.stopPropagation?.()
+  hideCtxMenu()
+  clearDomSelection()
+  addTodo({ focus: true })
+}
+fab.addEventListener('pointerdown', (e) => {
+  // Keep paper/document dismiss handlers from seeing this gesture
+  e.stopPropagation()
+})
+fab.addEventListener('click', activateFab)
+tapCatcher.addEventListener('click', (e) => {
+  e.stopPropagation()
+  // Blank paper / catcher: only dismiss menu + selection; never create (FAB only)
+  dismissAllInteraction({ blurActive: true })
+})
+
+paper.addEventListener('pointerdown', (e) => {
+  const t = /** @type {HTMLElement} */ (e.target)
+  // Tap empty paper / outside items: dismiss menu + clear selection (+ blur editor)
+  if (t === paper || t === tapCatcher || t === emptyEl || t.classList?.contains('todo-list')) {
+    dismissAllInteraction({ blurActive: true })
+  } else if (!t.closest?.('.todo-item') && !t.closest?.('.ctx-menu') && t !== fab && !fab.contains(t)) {
+    dismissAllInteraction({ blurActive: true })
+  }
+})
+
+paper.addEventListener('click', (e) => {
+  // Blank paper / empty-state: dismiss only — create exclusively via FAB/+
+  if (e.target === paper || e.target === emptyEl || emptyEl.contains(/** @type {Node} */ (e.target))) {
+    dismissAllInteraction({ blurActive: true })
+  }
+})
+
+ctxMenu.addEventListener('pointerdown', (e) => e.stopPropagation())
+ctxMenu.addEventListener('click', (e) => {
+  e.stopPropagation()
+  const btn = /** @type {HTMLElement|null} */ (
+    e.target instanceof HTMLElement ? e.target.closest('[data-action]') : null
+  )
+  if (!btn) return
+  const action = btn.dataset.action
+  const id = ctxTargetId
+  const li = id ? listEl.querySelector(`.todo-item[data-id="${id.replace(/"/g, '')}"]`) : null
+  hideCtxMenu()
+  if (action === 'edit' && li) {
+    // Unlock + focus + keyboard only after explicit 「编辑」
+    li.dispatchEvent(new CustomEvent('baizhi:enter-edit'))
+  } else if (action === 'toggle' && id) {
+    hapticLight()
+    toggleDone(id)
+  } else if (action === 'delete' && id) {
+    hapticLight()
+    removeTodo(id)
+  }
+})
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    dismissAllInteraction({ blurActive: true })
+  }
+})
+
+document.addEventListener('selectionchange', () => {
+  // If selection appears while no textarea is unlocked/editing, scrub it
+  const ae = document.activeElement
+  const editing =
+    ae instanceof HTMLTextAreaElement &&
+    ae.classList.contains('todo-text') &&
+    !ae.readOnly &&
+    ae.classList.contains('is-unlocked')
+  if (editing) return
+  collapseLockedTextareas()
+  const sel = window.getSelection?.()
+  if (sel && !sel.isCollapsed && sel.rangeCount > 0) {
+    // Sticky Android selection on locked text — clear
+    clearDomSelection()
+  }
+})
+
+paper.addEventListener(
+  'scroll',
+  () => {
+    scheduleReel()
+    // Scroll clears sticky selection + dismisses menu; blur editor to exit cleanly
+    // NEVER blur during programmatic scroll / FAB draft guard / suppress window
+    if (!ctxMenu.hidden) hideCtxMenu()
+    if (programmaticScroll > 0 || inDraftGuard()) {
+      clearDomSelection()
+      return
+    }
+    const ae = document.activeElement
+    if (ae instanceof HTMLTextAreaElement && ae.classList.contains('todo-text') && !ae.readOnly) {
+      ae.blur()
+    } else {
+      clearDomSelection()
+    }
+  },
+  { passive: true },
+)
+window.addEventListener('resize', () => {
+  hideCtxMenu()
+  scheduleReel()
+})
+window.visualViewport?.addEventListener('resize', scheduleReel)
+
+setInterval(() => {
+  listEl.querySelectorAll('.todo-item').forEach((li) => {
+    const id = li.dataset.id
+    const t = todos.find((x) => x.id === id)
+    if (!t) return
+    const timeEl = li.querySelector('.todo-time')
+    if (timeEl) timeEl.textContent = formatStamp(t.createdAt)
+  })
+}, 60_000)
+
+renderAll()
+
+window.__baizhi = { addTodo, removeTodo, toggleDone, todos: () => todos, formatStamp, renderAll, STORAGE_KEY, updateReel, scheduleReel, clearDomSelection, hideCtxMenu, dismissAllInteraction, beginSuppressScrollBlur, armDraftGuard, inDraftGuard, getSuppressScrollBlur: () => suppressScrollBlur, getDraftGuardUntil: () => draftGuardUntil, getProgrammaticScroll: () => programmaticScroll }

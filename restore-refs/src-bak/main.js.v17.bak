@@ -1,0 +1,414 @@
+import './style.css'
+
+import { Capacitor } from '@capacitor/core'
+
+async function hapticLight() {
+  if (!Capacitor.isNativePlatform()) return
+  try {
+    const { Haptics, ImpactStyle } = await import('@capacitor/haptics')
+    await Haptics.impact({ style: ImpactStyle.Light })
+  } catch {}
+}
+
+async function setupNativeChrome() {
+  if (!Capacitor.isNativePlatform()) return
+  try {
+    const { StatusBar, Style } = await import('@capacitor/status-bar')
+    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches
+    await StatusBar.setStyle({ style: dark ? Style.Dark : Style.Light })
+    await StatusBar.setBackgroundColor({ color: dark ? '#0c0c0c' : '#f7f5f2' })
+  } catch {}
+  try {
+    const { Keyboard } = await import('@capacitor/keyboard')
+    Keyboard.setAccessoryBarVisible({ isVisible: false }).catch(() => {})
+  } catch {}
+}
+
+setupNativeChrome()
+
+const STORAGE_KEY = 'baizhi.todos.v1'
+const TZ = 'Asia/Hong_Kong'
+const REDUCE_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+/** @typedef {{ id: string, text: string, createdAt: number, completed: boolean, completedAt?: number|null }} Todo */
+
+const app = document.querySelector('#app')
+
+app.innerHTML = `
+  <header class="app-header">
+    <div class="app-meta" id="countMeta"></div>
+  </header>
+  <main class="paper-scroll" id="paper" aria-label="白纸待办">
+    <div class="empty-state" id="empty">
+      <div class="empty-glyph" aria-hidden="true"></div>
+      <p class="empty-title">轻写下第一件事</p>
+      <p class="empty-sub">点 + 新建 · 长按划线完成</p>
+    </div>
+    <ul class="todo-list" id="list"></ul>
+    <div class="tap-catcher" id="tapCatcher" aria-hidden="true"></div>
+  </main>
+  <button class="fab" id="fab" type="button" aria-label="新建">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+      <path d="M12 5v14M5 12h14"/>
+    </svg>
+  </button>
+`
+
+const listEl = /** @type {HTMLUListElement} */ (document.getElementById('list'))
+const emptyEl = /** @type {HTMLElement} */ (document.getElementById('empty'))
+const countMeta = /** @type {HTMLElement} */ (document.getElementById('countMeta'))
+const paper = /** @type {HTMLElement} */ (document.getElementById('paper'))
+const fab = /** @type {HTMLButtonElement} */ (document.getElementById('fab'))
+const tapCatcher = /** @type {HTMLElement} */ (document.getElementById('tapCatcher'))
+
+/** @type {Todo[]} */
+let todos = loadTodos()
+let reelRaf = 0
+
+function loadTodos() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .filter((t) => t && typeof t.id === 'string')
+      .map((t) => ({
+        id: t.id,
+        text: String(t.text ?? ''),
+        createdAt: Number(t.createdAt) || Date.now(),
+        completed: !!t.completed,
+        completedAt: t.completedAt ?? null,
+      }))
+  } catch {
+    return []
+  }
+}
+
+function saveTodos() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(todos))
+}
+
+function newId() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`
+}
+
+function partsInTz(ms) {
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+  const map = Object.fromEntries(
+    fmt
+      .formatToParts(new Date(ms))
+      .filter((p) => p.type !== 'literal')
+      .map((p) => [p.type, p.value]),
+  )
+  return {
+    year: map.year,
+    month: map.month,
+    day: map.day,
+    hour: map.hour === '24' ? '00' : map.hour,
+    minute: map.minute,
+    ymd: `${map.year}-${map.month}-${map.day}`,
+  }
+}
+
+function todayYmd() {
+  return partsInTz(Date.now()).ymd
+}
+
+function yesterdayYmd() {
+  return partsInTz(Date.now() - 864e5).ymd
+}
+
+function formatStamp(ms) {
+  const p = partsInTz(ms)
+  const hm = `${p.hour}:${p.minute}`
+  if (p.ymd === todayYmd()) return `今天 ${hm}`
+  if (p.ymd === yesterdayYmd()) return `昨天 ${hm}`
+  return `${p.month}-${p.day} ${hm}`
+}
+
+function updateMeta() {
+  const open = todos.filter((t) => !t.completed).length
+  const done = todos.filter((t) => t.completed).length
+  if (todos.length === 0) {
+    countMeta.textContent = ''
+  } else {
+    countMeta.innerHTML = `<span class="meta-open">未完成 ${open}</span><span class="meta-sep">·</span><span class="meta-done">已完成 ${done}</span>`
+  }
+  emptyEl.classList.toggle('is-visible', todos.length === 0)
+}
+
+function autoSize(ta) {
+  ta.style.height = 'auto'
+  ta.style.height = `${ta.scrollHeight}px`
+}
+
+function clamp(n, lo, hi) {
+  return Math.max(lo, Math.min(hi, n))
+}
+
+function smoothstep(t) {
+  const x = clamp(t, 0, 1)
+  return x * x * (3 - 2 * x)
+}
+
+/** Soft-float reel / vanish — v5 soft-float motion */
+function updateReel() {
+  reelRaf = 0
+  if (REDUCE_MOTION) {
+    listEl.querySelectorAll('.todo-item').forEach((el) => {
+      const face = el.querySelector('.todo-face')
+      if (face) {
+        face.style.transform = ''
+        face.style.filter = ''
+      }
+      el.style.opacity = el.classList.contains('is-done') ? '0.88' : '1'
+    })
+    return
+  }
+
+  const paperRect = paper.getBoundingClientRect()
+  const h = Math.max(paperRect.height, 1)
+  const horizon = paperRect.top + h * 0.82
+
+  listEl.querySelectorAll('.todo-item').forEach((el) => {
+    const face = el.querySelector('.todo-face') || el
+    const box = el.getBoundingClientRect()
+    if (box.bottom < paperRect.top - 100 || box.top > paperRect.bottom + 100) {
+      el.style.opacity = '0'
+      return
+    }
+
+    const mid = box.top + box.height * 0.5
+    const rise = clamp((horizon - mid) / (horizon - paperRect.top), 0, 1)
+    const soft = smoothstep(rise * rise * (1.15 - 0.15 * rise))
+    const below = smoothstep(clamp((mid - horizon) / (h * 0.2), 0, 1))
+
+    const scale = 1 - soft * 0.58 - below * 0.05
+    const opacityBase = 1 - soft * 0.92 - below * 0.1
+    const rotX = soft * 58 - below * 10
+    const z = -soft * 220 - below * 16
+    const y = -soft * 18
+    const blur = soft > 0.45 ? (soft - 0.45) * 3.4 : 0
+    const opacity = clamp(
+      opacityBase * (el.classList.contains('is-done') ? 0.9 : 1),
+      0.04,
+      1,
+    )
+
+    face.style.transform = `translate3d(0, ${y.toFixed(2)}px, ${z.toFixed(2)}px) rotateX(${rotX.toFixed(2)}deg) scale(${scale.toFixed(4)})`
+    face.style.filter = blur > 0.04 ? `blur(${blur.toFixed(2)}px)` : ''
+    el.style.opacity = opacity.toFixed(3)
+  })
+}
+
+function scheduleReel() {
+  reelRaf ||= requestAnimationFrame(updateReel)
+}
+
+/**
+ * @param {Todo} todo
+ * @param {{ animate?: boolean }} [opts]
+ */
+function createItemEl(todo, { animate = false } = {}) {
+  const li = document.createElement('li')
+  li.className = `todo-item${todo.completed ? ' is-done' : ''}${animate ? ' is-entering' : ''}`
+  li.dataset.id = todo.id
+  li.innerHTML = `
+    <div class="todo-face">
+      <div class="todo-body">
+        <time class="todo-time" datetime="${new Date(todo.createdAt).toISOString()}">${formatStamp(todo.createdAt)}</time>
+        <textarea class="todo-text" rows="1" maxlength="280" placeholder="" enterkeyhint="done"></textarea>
+      </div>
+    </div>
+  `
+
+  const ta = /** @type {HTMLTextAreaElement} */ (li.querySelector('.todo-text'))
+  ta.value = todo.text
+  autoSize(ta)
+
+  let longTimer = 0
+  let startX = 0
+  let startY = 0
+
+  const clearPress = () => {
+    if (longTimer) {
+      clearTimeout(longTimer)
+      longTimer = 0
+    }
+    li.classList.remove('is-longpressing', 'is-pressing')
+  }
+
+  li.addEventListener('pointerdown', (ev) => {
+    startX = ev.clientX
+    startY = ev.clientY
+    li.classList.add('is-pressing', 'is-longpressing')
+    clearTimeout(longTimer)
+    longTimer = window.setTimeout(() => {
+      longTimer = 0
+      li.classList.remove('is-longpressing')
+      hapticLight()
+      toggleDone(todo.id)
+      if (document.activeElement === ta) ta.blur()
+    }, 480)
+  })
+
+  li.addEventListener('pointermove', (ev) => {
+    if (!longTimer) return
+    const dx = ev.clientX - startX
+    const dy = ev.clientY - startY
+    if (dx * dx + dy * dy > 64) clearPress()
+  })
+
+  li.addEventListener('pointerup', clearPress)
+  li.addEventListener('pointerleave', clearPress)
+  li.addEventListener('pointercancel', clearPress)
+  li.addEventListener('contextmenu', (ev) => {
+    ev.preventDefault()
+  })
+
+  ta.addEventListener('input', () => {
+    autoSize(ta)
+    const t = todos.find((x) => x.id === todo.id)
+    if (t) {
+      t.text = ta.value
+      saveTodos()
+      scheduleReel()
+    }
+  })
+
+  ta.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter' && !ev.shiftKey) {
+      ev.preventDefault()
+      ta.blur()
+    }
+  })
+
+  ta.addEventListener('blur', () => {
+    const t = todos.find((x) => x.id === todo.id)
+    if (t) {
+      t.text = ta.value.trim()
+      ta.value = t.text
+      autoSize(ta)
+      saveTodos()
+      scheduleReel()
+    }
+  })
+
+  if (animate) {
+    li.addEventListener(
+      'animationend',
+      () => {
+        li.classList.remove('is-entering')
+        scheduleReel()
+      },
+      { once: true },
+    )
+  }
+
+  return li
+}
+
+function renderAll() {
+  listEl.replaceChildren()
+  const ordered = [...todos].sort((a, b) => a.createdAt - b.createdAt)
+  for (const t of ordered) listEl.appendChild(createItemEl(t))
+  updateMeta()
+  scheduleReel()
+}
+
+function toggleDone(id) {
+  const t = todos.find((x) => x.id === id)
+  if (!t) return
+  t.completed = !t.completed
+  t.completedAt = t.completed ? Date.now() : null
+  saveTodos()
+  const el = listEl.querySelector(`[data-id="${id}"]`)
+  if (el) {
+    el.classList.toggle('is-done', t.completed)
+    updateMeta()
+    scheduleReel()
+  } else {
+    renderAll()
+  }
+}
+
+/** @param {{ focus?: boolean }} [opts] */
+function addTodo({ focus = true } = {}) {
+  hapticLight()
+  /** @type {Todo} */
+  const todo = {
+    id: newId(),
+    text: '',
+    createdAt: Date.now(),
+    completed: false,
+    completedAt: null,
+  }
+  todos.push(todo)
+  saveTodos()
+  emptyEl.classList.remove('is-visible')
+
+  const el = createItemEl(todo, { animate: true })
+  listEl.appendChild(el)
+  updateMeta()
+
+  const ta = /** @type {HTMLTextAreaElement} */ (el.querySelector('.todo-text'))
+  requestAnimationFrame(() => {
+    paper.scrollTo({ top: paper.scrollHeight, behavior: 'smooth' })
+    scheduleReel()
+    if (focus) {
+      setTimeout(() => {
+        ta.focus()
+        const len = ta.value.length
+        ta.setSelectionRange(len, len)
+        scheduleReel()
+      }, 180)
+    }
+  })
+  return todo
+}
+
+fab.addEventListener('click', () => addTodo())
+tapCatcher.addEventListener('click', () => addTodo())
+paper.addEventListener('click', (ev) => {
+  if (
+    (ev.target === paper || ev.target === emptyEl || emptyEl.contains(/** @type {Node} */ (ev.target))) &&
+    todos.length === 0
+  ) {
+    addTodo()
+  }
+})
+
+paper.addEventListener('scroll', scheduleReel, { passive: true })
+window.addEventListener('resize', scheduleReel)
+window.visualViewport?.addEventListener('resize', scheduleReel)
+
+setInterval(() => {
+  listEl.querySelectorAll('.todo-item').forEach((el) => {
+    const id = el.dataset.id
+    const t = todos.find((x) => x.id === id)
+    if (!t) return
+    const timeEl = el.querySelector('.todo-time')
+    if (timeEl) timeEl.textContent = formatStamp(t.createdAt)
+  })
+}, 60_000)
+
+renderAll()
+
+window.__baizhi = {
+  addTodo,
+  todos: () => todos,
+  formatStamp,
+  renderAll,
+  STORAGE_KEY,
+  updateReel,
+  scheduleReel,
+}

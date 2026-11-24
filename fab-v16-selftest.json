@@ -1,0 +1,324 @@
+{
+  "ok": true,
+  "results": [
+    {
+      "ok": true,
+      "msg": "fab exists"
+    },
+    {
+      "ok": true,
+      "msg": "starts empty",
+      "extra": {
+        "todos": 0,
+        "items": 0,
+        "fab": true,
+        "storage": null
+      }
+    },
+    {
+      "ok": true,
+      "msg": "android-race: draft still exists after scroll/blur settle",
+      "extra": {
+        "todos": 1,
+        "items": 1,
+        "editing": true,
+        "unlocked": true,
+        "activeTa": true,
+        "emptyVisible": false,
+        "suppress": 3,
+        "lastText": "",
+        "draftStillThere": true,
+        "storageCount": 0,
+        "storageHasBlank": false,
+        "ephemeral": [
+          "mw1wbba3-goin6se"
+        ]
+      }
+    },
+    {
+      "ok": true,
+      "msg": "android-race: still editing/unlocked",
+      "extra": {
+        "todos": 1,
+        "items": 1,
+        "editing": true,
+        "unlocked": true,
+        "activeTa": true,
+        "emptyVisible": false,
+        "suppress": 3,
+        "lastText": "",
+        "draftStillThere": true,
+        "storageCount": 0,
+        "storageHasBlank": false,
+        "ephemeral": [
+          "mw1wbba3-goin6se"
+        ]
+      }
+    },
+    {
+      "ok": true,
+      "msg": "android-race: textarea still focused",
+      "extra": {
+        "todos": 1,
+        "items": 1,
+        "editing": true,
+        "unlocked": true,
+        "activeTa": true,
+        "emptyVisible": false,
+        "suppress": 3,
+        "lastText": "",
+        "draftStillThere": true,
+        "storageCount": 0,
+        "storageHasBlank": false,
+        "ephemeral": [
+          "mw1wbba3-goin6se"
+        ]
+      }
+    },
+    {
+      "ok": true,
+      "msg": "android-race: empty draft NOT in localStorage",
+      "extra": {
+        "todos": 1,
+        "items": 1,
+        "editing": true,
+        "unlocked": true,
+        "activeTa": true,
+        "emptyVisible": false,
+        "suppress": 3,
+        "lastText": "",
+        "draftStillThere": true,
+        "storageCount": 0,
+        "storageHasBlank": false,
+        "ephemeral": [
+          "mw1wbba3-goin6se"
+        ]
+      }
+    },
+    {
+      "ok": true,
+      "msg": "intentional dismiss: empty draft cleaned (no DOM/storage blank)",
+      "extra": {
+        "todos": 0,
+        "items": 0,
+        "storageCount": 0,
+        "emptyVisible": true,
+        "editingCount": 0
+      }
+    },
+    {
+      "ok": true,
+      "msg": "idle: uses .todo-display div",
+      "extra": {
+        "usesDisplayDiv": true,
+        "taHiddenOrLocked": true,
+        "selectstartPrevented": true,
+        "userSelectNone": true,
+        "hasUnlocked": false,
+        "editingCount": 0,
+        "taReadOnly": true,
+        "storageText": [
+          "保留事项"
+        ],
+        "storageHasBlank": false,
+        "todos": 1
+      }
+    },
+    {
+      "ok": true,
+      "msg": "idle: no unlocked editors",
+      "extra": {
+        "usesDisplayDiv": true,
+        "taHiddenOrLocked": true,
+        "selectstartPrevented": true,
+        "userSelectNone": true,
+        "hasUnlocked": false,
+        "editingCount": 0,
+        "taReadOnly": true,
+        "storageText": [
+          "保留事项"
+        ],
+        "storageHasBlank": false,
+        "todos": 1
+      }
+    },
+    {
+      "ok": true,
+      "msg": "idle: user-select none on display",
+      "extra": {
+        "usesDisplayDiv": true,
+        "taHiddenOrLocked": true,
+        "selectstartPrevented": true,
+        "userSelectNone": true,
+        "hasUnlocked": false,
+        "editingCount": 0,
+        "taReadOnly": true,
+        "storageText": [
+          "保留事项"
+        ],
+        "storageHasBlank": false,
+        "todos": 1
+      }
+    },
+    {
+      "ok": true,
+      "msg": "typed text persisted; no blank in storage",
+      "extra": {
+        "usesDisplayDiv": true,
+        "taHiddenOrLocked": true,
+        "selectstartPrevented": true,
+        "userSelectNone": true,
+        "hasUnlocked": false,
+        "editingCount": 0,
+        "taReadOnly": true,
+        "storageText": [
+          "保留事项"
+        ],
+        "storageHasBlank": false,
+        "todos": 1
+      }
+    },
+    {
+      "ok": true,
+      "msg": "many+android-race: draft stays editing/focused",
+      "extra": {
+        "before": 11,
+        "todos": 12,
+        "items": 12,
+        "editing": true,
+        "unlocked": true,
+        "activeTa": true,
+        "lastText": "",
+        "survived": true,
+        "storageCount": 11,
+        "storageHasBlank": false
+      }
+    },
+    {
+      "ok": true,
+      "msg": "many+android-race: storage has no blank draft",
+      "extra": {
+        "before": 11,
+        "todos": 12,
+        "items": 12,
+        "editing": true,
+        "unlocked": true,
+        "activeTa": true,
+        "lastText": "",
+        "survived": true,
+        "storageCount": 11,
+        "storageHasBlank": false
+      }
+    },
+    {
+      "ok": true,
+      "msg": "empty/catcher/paper click does not create",
+      "extra": {
+        "beforeEmptyClick": 11,
+        "afterEmptyClick": 11
+      }
+    },
+    {
+      "ok": true,
+      "msg": "no flash-leave blank: stays editing through accidental blur, cleans on dismiss",
+      "extra": {
+        "midItems": 12,
+        "midEditing": 1,
+        "afterTodos": 11,
+        "afterItems": 11,
+        "storageHasBlank": false,
+        "blankIdleLeft": false
+      }
+    }
+  ],
+  "androidRace": {
+    "todos": 1,
+    "items": 1,
+    "editing": true,
+    "unlocked": true,
+    "activeTa": true,
+    "emptyVisible": false,
+    "suppress": 3,
+    "lastText": "",
+    "draftStillThere": true,
+    "storageCount": 0,
+    "storageHasBlank": false,
+    "ephemeral": [
+      "mw1wbba3-goin6se"
+    ]
+  },
+  "cleaned": {
+    "todos": 0,
+    "items": 0,
+    "storageCount": 0,
+    "emptyVisible": true,
+    "editingCount": 0
+  },
+  "idleSel": {
+    "usesDisplayDiv": true,
+    "taHiddenOrLocked": true,
+    "selectstartPrevented": true,
+    "userSelectNone": true,
+    "hasUnlocked": false,
+    "editingCount": 0,
+    "taReadOnly": true,
+    "storageText": [
+      "保留事项"
+    ],
+    "storageHasBlank": false,
+    "todos": 1
+  },
+  "manyRace": {
+    "before": 11,
+    "todos": 12,
+    "items": 12,
+    "editing": true,
+    "unlocked": true,
+    "activeTa": true,
+    "lastText": "",
+    "survived": true,
+    "storageCount": 11,
+    "storageHasBlank": false
+  },
+  "noFlashBlank": {
+    "midItems": 12,
+    "midEditing": 1,
+    "afterTodos": 11,
+    "afterItems": 11,
+    "storageHasBlank": false,
+    "blankIdleLeft": false
+  },
+  "ts": "2026-11-04T09:09:53.998Z",
+  "passCount": 15,
+  "total": 15,
+  "apk": {
+    "path": "/workspace/白纸-加号稳焦-v16.apk",
+    "also": "/workspace/baizhi/白纸-加号稳焦-v16.apk",
+    "bytes": 3989095,
+    "sha256": "1e86c8e46e326e27c14614264bc3f9d6bbfbc1c3299a21b3f2c645ad0dff430c",
+    "builtAt_AsiaHongKong": "2026-11-04 17:10:11 Asia/Hong_Kong",
+    "versionCode": 16,
+    "versionName": "1.6",
+    "applicationId": "com.sykin.baizhi"
+  },
+  "rootCause": {
+    "fabImeFlashBlank": "v15 blur during inDraftGuard called exitEdit()+save() then KEPT the empty row (guard was meant to prevent flash-remove). On Android WebView, focus→IME→scroll/viewport settle fires blur while guard is active → keyboard dismisses and an idle blank todo remains in DOM + localStorage.",
+    "persistEmpty": "addTodo() pushed text:\"\" and save() immediately, so blanks were durable from the first tap."
+  },
+  "fixes": [
+    "Ephemeral draft: addTodo does not save(); localStorage only gets meaningful text",
+    "save()/load() filter blank todos (cleans v15 leftovers)",
+    "Accidental blur during programmaticScroll/inDraftGuard → re-focus stay editing (never exit-to-idle blank)",
+    "Intentional dismiss (tap outside/Esc/Enter/switch editor) via markIntentionalBlur → discard empty completely",
+    "FAB path: no dismissAllInteraction; single gentle place scroll; refocus without extra scroll fighting IME",
+    "Idle keeps .todo-display div; FAB-only create; no placeholder"
+  ],
+  "tests": {
+    "command": "node /workspace/baizhi/fab-v16-selftest.mjs",
+    "ok": true,
+    "passCount": 15,
+    "total": 15,
+    "evidence": "/workspace/baizhi/fab-v16-selftest.json",
+    "verifiedAt_AsiaHongKong": "2026-11-04 17:10:11 Asia/Hong_Kong"
+  }
+}

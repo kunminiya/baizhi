@@ -1,0 +1,232 @@
+{
+  "ok": true,
+  "checks": [
+    {
+      "name": "api.addTodo",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "api.updateReel",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "api.removeTodo",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "api.toggleDone",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "ctx_menu_present",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "empty_hint_v20",
+      "pass": true,
+      "detail": "点 + 新建 · 双击划线 · 长按菜单"
+    },
+    {
+      "name": "fab_empty_creates_ui_item",
+      "pass": true,
+      "detail": "{\"items\":1,\"focused\":true,\"storedCount\":0,\"blankInStorage\":false,\"ephemeralCount\":1}"
+    },
+    {
+      "name": "fab_empty_focuses",
+      "pass": true,
+      "detail": "{\"items\":1,\"focused\":true,\"storedCount\":0,\"blankInStorage\":false,\"ephemeralCount\":1}"
+    },
+    {
+      "name": "fab_empty_not_in_storage",
+      "pass": true,
+      "detail": "{\"items\":1,\"focused\":true,\"storedCount\":0,\"blankInStorage\":false,\"ephemeralCount\":1}"
+    },
+    {
+      "name": "fab_empty_outside_discards",
+      "pass": true,
+      "detail": "{\"items\":0,\"storedCount\":0,\"blankInStorage\":false,\"emptyVisible\":true,\"ephemeral\":[]}"
+    },
+    {
+      "name": "fab_empty_shows_empty_state",
+      "pass": true,
+      "detail": "{\"items\":0,\"storedCount\":0,\"blankInStorage\":false,\"emptyVisible\":true,\"ephemeral\":[]}"
+    },
+    {
+      "name": "fab_empty_esc_discards",
+      "pass": true,
+      "detail": "{\"items\":0,\"storedCount\":0,\"blankInStorage\":false}"
+    },
+    {
+      "name": "typing_in_textarea",
+      "pass": true,
+      "detail": "双击菜单测试"
+    },
+    {
+      "name": "typing_persists_storage",
+      "pass": true,
+      "detail": "双击菜单测试"
+    },
+    {
+      "name": "enter_blur_keeps_text",
+      "pass": true,
+      "detail": "{\"text\":\"双击菜单测试\",\"completed\":false,\"focused\":false,\"readonly\":true}"
+    },
+    {
+      "name": "enter_exits_edit",
+      "pass": true,
+      "detail": "{\"text\":\"双击菜单测试\",\"completed\":false,\"focused\":false,\"readonly\":true}"
+    },
+    {
+      "name": "doubletap_marks_done",
+      "pass": true,
+      "detail": "{\"hasDoneClass\":true,\"completed\":true,\"decoration\":\"line-through\",\"focused\":false}"
+    },
+    {
+      "name": "done_strikethrough_style",
+      "pass": true,
+      "detail": "line-through"
+    },
+    {
+      "name": "doubletap_no_focus",
+      "pass": true,
+      "detail": "{\"hasDoneClass\":true,\"completed\":true,\"decoration\":\"line-through\",\"focused\":false}"
+    },
+    {
+      "name": "doubletap_untoggles",
+      "pass": true,
+      "detail": "{\"completed\":false}"
+    },
+    {
+      "name": "longpress_opens_menu",
+      "pass": true,
+      "detail": "{\"menuHidden\":false,\"menuOpenClass\":true,\"labels\":[{\"action\":\"edit\",\"text\":\"编辑\"},{\"action\":\"toggle\",\"text\":\"完成\"},{\"action\":\"delete\",\"text\":\"删除\"}],\"completed\":false,\"hasDoneClass\":false,\"itemMenuOpen\":true,\"focused\":false,\"editing\":false,\"zIndex\":\"100\"}"
+    },
+    {
+      "name": "longpress_does_not_toggle",
+      "pass": true,
+      "detail": "{\"menuHidden\":false,\"menuOpenClass\":true,\"labels\":[{\"action\":\"edit\",\"text\":\"编辑\"},{\"action\":\"toggle\",\"text\":\"完成\"},{\"action\":\"delete\",\"text\":\"删除\"}],\"completed\":false,\"hasDoneClass\":false,\"itemMenuOpen\":true,\"focused\":false,\"editing\":false,\"zIndex\":\"100\"}"
+    },
+    {
+      "name": "longpress_does_not_focus",
+      "pass": true,
+      "detail": "{\"menuHidden\":false,\"menuOpenClass\":true,\"labels\":[{\"action\":\"edit\",\"text\":\"编辑\"},{\"action\":\"toggle\",\"text\":\"完成\"},{\"action\":\"delete\",\"text\":\"删除\"}],\"completed\":false,\"hasDoneClass\":false,\"itemMenuOpen\":true,\"focused\":false,\"editing\":false,\"zIndex\":\"100\"}"
+    },
+    {
+      "name": "menu_has_edit_toggle_delete",
+      "pass": true,
+      "detail": "编辑|完成|删除"
+    },
+    {
+      "name": "ctx_menu_z_index_high",
+      "pass": true,
+      "detail": "100"
+    },
+    {
+      "name": "longpress_survives_pointercancel",
+      "pass": true,
+      "detail": "{\"menuOpen\":true,\"completed\":false,\"completedBefore\":false,\"focused\":false,\"editing\":false}"
+    },
+    {
+      "name": "pointercancel_longpress_no_toggle",
+      "pass": true,
+      "detail": "{\"menuOpen\":true,\"completed\":false,\"completedBefore\":false,\"focused\":false,\"editing\":false}"
+    },
+    {
+      "name": "pointercancel_longpress_no_focus",
+      "pass": true,
+      "detail": "{\"menuOpen\":true,\"completed\":false,\"completedBefore\":false,\"focused\":false,\"editing\":false}"
+    },
+    {
+      "name": "menu_edit_focuses_textarea",
+      "pass": true,
+      "detail": "{\"focused\":true,\"unlocked\":true,\"readonly\":false,\"editing\":true,\"menuHidden\":true}"
+    },
+    {
+      "name": "menu_closes_after_edit",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "menu_toggle_marks_done",
+      "pass": true,
+      "detail": "{\"completed\":true,\"hasDoneClass\":true,\"menuHidden\":true}"
+    },
+    {
+      "name": "menu_toggle_label_cancel",
+      "pass": true,
+      "detail": "取消完成"
+    },
+    {
+      "name": "menu_delete_removes",
+      "pass": true,
+      "detail": "{\"items\":0,\"storedCount\":0,\"emptyVisible\":true}"
+    },
+    {
+      "name": "blank_paper_no_create",
+      "pass": true,
+      "detail": "0"
+    },
+    {
+      "name": "updateReel_no_crash",
+      "pass": true,
+      "detail": "true"
+    },
+    {
+      "name": "no_todo_display_mode",
+      "pass": true,
+      "detail": "{\"todoDisplay\":false,\"beginEdit\":false}"
+    },
+    {
+      "name": "locked_textarea_not_editing",
+      "pass": true,
+      "detail": "{\"editing\":false,\"unlocked\":false,\"readonly\":true,\"userSelect\":\"none\",\"webkitUserSelect\":\"none\",\"touchCallout\":\"\"}"
+    },
+    {
+      "name": "locked_textarea_user_select_none",
+      "pass": true,
+      "detail": "{\"editing\":false,\"unlocked\":false,\"readonly\":true,\"userSelect\":\"none\",\"webkitUserSelect\":\"none\",\"touchCallout\":\"\"}"
+    },
+    {
+      "name": "locked_textarea_touch_callout_none",
+      "pass": true,
+      "detail": "{\"editing\":false,\"unlocked\":false,\"readonly\":true,\"userSelect\":\"none\",\"webkitUserSelect\":\"none\",\"touchCallout\":\"\"}"
+    },
+    {
+      "name": "longpress_no_text_selection",
+      "pass": true,
+      "detail": "{\"afterLpSelect\":{\"focused\":false,\"editing\":false,\"selectionStart\":0,\"selectionEnd\":0,\"selText\":\"\",\"hasRange\":false,\"menuOpen\":true,\"userSelect\":\"none\"},\"afterRealLp\":{\"menuOpen\":true,\"focused\":false,\"editing\":false,\"selectionCollapsed\":true,\"selText\":\"\",\"hasRange\":false,\"userSelect\":\"none\"}}"
+    },
+    {
+      "name": "longpress_menu_only_no_select",
+      "pass": true,
+      "detail": "{\"menuOpen\":true,\"focused\":false,\"editing\":false,\"selectionCollapsed\":true,\"selText\":\"\",\"hasRange\":false,\"userSelect\":\"none\"}"
+    },
+    {
+      "name": "softfloat_vanishTop_lowered",
+      "pass": true,
+      "detail": "vanishTopFrac=-0.16"
+    },
+    {
+      "name": "softfloat_opacity_eased",
+      "pass": true,
+      "detail": "opacityDrop=0.78 scaleDrop=0.48"
+    },
+    {
+      "name": "softfloat_horizon_frac",
+      "pass": true,
+      "detail": "horizonFrac=0.84"
+    },
+    {
+      "name": "editing_allows_user_select_text",
+      "pass": true,
+      "detail": "{\"editing\":true,\"userSelect\":\"text\"}"
+    }
+  ],
+  "passed": 45,
+  "total": 45
+}

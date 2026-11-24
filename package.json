@@ -1,0 +1,30 @@
+{
+  "name": "baizhi",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "build:web": "npm run build",
+    "sync:android": "npm run build && npx cap sync android",
+    "apk:debug": "npm run sync:android && cd android && ./gradlew assembleDebug",
+    "core:build": "sh scripts/build-core.sh",
+    "prebuild": "npm run core:build",
+    "predev": "npm run core:build"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^25.16.0",
+    "vite": "^8.3.5"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.6.10",
+    "@capacitor/app": "^7.1.2",
+    "@capacitor/cli": "^7.6.10",
+    "@capacitor/core": "^7.6.10",
+    "@capacitor/haptics": "^7.0.5",
+    "@capacitor/keyboard": "^7.0.6",
+    "@capacitor/status-bar": "^7.0.6"
+  }
+}

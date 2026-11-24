@@ -1,0 +1,145 @@
+{
+  "ok": true,
+  "checks": [
+    {
+      "name": "api.addTodo",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "api.updateReel",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "api.removeTodo",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "api.toggleDone",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "ctx_menu_present",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "empty_hint_v18",
+      "pass": true,
+      "detail": "点 + 新建 · 双击划线 · 长按菜单"
+    },
+    {
+      "name": "fab_creates_item",
+      "pass": true,
+      "detail": "{\"items\":1,\"hasTextarea\":true,\"focused\":true,\"tag\":\"TEXTAREA\",\"unlocked\":true,\"readonly\":false}"
+    },
+    {
+      "name": "fab_uses_textarea",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "fab_focuses_textarea",
+      "pass": true,
+      "detail": "{\"items\":1,\"hasTextarea\":true,\"focused\":true,\"tag\":\"TEXTAREA\",\"unlocked\":true,\"readonly\":false}"
+    },
+    {
+      "name": "typing_in_textarea",
+      "pass": true,
+      "detail": "双击菜单测试"
+    },
+    {
+      "name": "typing_persists_storage",
+      "pass": true,
+      "detail": "双击菜单测试"
+    },
+    {
+      "name": "enter_blur_keeps_text",
+      "pass": true,
+      "detail": "{\"text\":\"双击菜单测试\",\"completed\":false,\"focused\":false,\"readonly\":true}"
+    },
+    {
+      "name": "enter_exits_edit",
+      "pass": true,
+      "detail": "{\"text\":\"双击菜单测试\",\"completed\":false,\"focused\":false,\"readonly\":true}"
+    },
+    {
+      "name": "doubletap_marks_done",
+      "pass": true,
+      "detail": "{\"hasDoneClass\":true,\"completed\":true,\"decoration\":\"line-through\",\"menuHidden\":true}"
+    },
+    {
+      "name": "done_strikethrough_style",
+      "pass": true,
+      "detail": "line-through"
+    },
+    {
+      "name": "doubletap_untoggles",
+      "pass": true,
+      "detail": "{\"completed\":false}"
+    },
+    {
+      "name": "longpress_opens_menu",
+      "pass": true,
+      "detail": "{\"menuHidden\":false,\"menuOpenClass\":true,\"labels\":[{\"action\":\"edit\",\"text\":\"编辑\"},{\"action\":\"toggle\",\"text\":\"完成\"},{\"action\":\"delete\",\"text\":\"删除\"}],\"completed\":false,\"hasDoneClass\":false,\"itemMenuOpen\":true}"
+    },
+    {
+      "name": "longpress_does_not_toggle",
+      "pass": true,
+      "detail": "{\"menuHidden\":false,\"menuOpenClass\":true,\"labels\":[{\"action\":\"edit\",\"text\":\"编辑\"},{\"action\":\"toggle\",\"text\":\"完成\"},{\"action\":\"delete\",\"text\":\"删除\"}],\"completed\":false,\"hasDoneClass\":false,\"itemMenuOpen\":true}"
+    },
+    {
+      "name": "menu_has_edit_toggle_delete",
+      "pass": true,
+      "detail": "编辑|完成|删除"
+    },
+    {
+      "name": "menu_edit_focuses_textarea",
+      "pass": true,
+      "detail": "{\"focused\":true,\"unlocked\":true,\"readonly\":false,\"editing\":true,\"menuHidden\":true}"
+    },
+    {
+      "name": "menu_closes_after_edit",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "menu_toggle_marks_done",
+      "pass": true,
+      "detail": "{\"completed\":true,\"hasDoneClass\":true,\"menuHidden\":true}"
+    },
+    {
+      "name": "menu_toggle_label_cancel",
+      "pass": true,
+      "detail": "取消完成"
+    },
+    {
+      "name": "menu_delete_removes",
+      "pass": true,
+      "detail": "{\"items\":0,\"storedCount\":0,\"emptyVisible\":true}"
+    },
+    {
+      "name": "blank_paper_no_create",
+      "pass": true,
+      "detail": "0"
+    },
+    {
+      "name": "updateReel_no_crash",
+      "pass": true,
+      "detail": "true"
+    },
+    {
+      "name": "no_armDraftGuard",
+      "pass": true,
+      "detail": "{\"leftover\":{\"armDraftGuard\":false,\"ephemeral\":false,\"todoDisplay\":false,\"dualMode\":false},\"moduleLeftover\":{\"armDraftGuard\":false,\"ephemeralIds\":false,\"todoDisplay\":false}}"
+    },
+    {
+      "name": "no_todo_display_mode",
+      "pass": true,
+      "detail": "{\"leftover\":{\"armDraftGuard\":false,\"ephemeral\":false,\"todoDisplay\":false,\"dualMode\":false},\"moduleLeftover\":{\"armDraftGuard\":false,\"ephemeralIds\":false,\"todoDisplay\":false}}"
+    }
+  ]
+}

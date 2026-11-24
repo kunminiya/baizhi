@@ -1,0 +1,206 @@
+{
+  "ok": true,
+  "results": [
+    {
+      "ok": true,
+      "msg": "fab exists"
+    },
+    {
+      "ok": true,
+      "msg": "starts empty",
+      "extra": {
+        "todos": 0,
+        "items": 0,
+        "fab": true
+      }
+    },
+    {
+      "ok": true,
+      "msg": "android-race: draft still exists after 1s scrolls",
+      "extra": {
+        "todos": 1,
+        "items": 1,
+        "editing": true,
+        "unlocked": true,
+        "activeTa": true,
+        "emptyVisible": false,
+        "suppress": 5,
+        "lastText": "",
+        "draftStillThere": true
+      }
+    },
+    {
+      "ok": true,
+      "msg": "android-race: still editing/unlocked",
+      "extra": {
+        "todos": 1,
+        "items": 1,
+        "editing": true,
+        "unlocked": true,
+        "activeTa": true,
+        "emptyVisible": false,
+        "suppress": 5,
+        "lastText": "",
+        "draftStillThere": true
+      }
+    },
+    {
+      "ok": true,
+      "msg": "android-race: textarea still focused",
+      "extra": {
+        "todos": 1,
+        "items": 1,
+        "editing": true,
+        "unlocked": true,
+        "activeTa": true,
+        "emptyVisible": false,
+        "suppress": 5,
+        "lastText": "",
+        "draftStillThere": true
+      }
+    },
+    {
+      "ok": true,
+      "msg": "idle: non-input display OR locked textarea with selectstart prevented",
+      "extra": {
+        "usesDisplayDiv": true,
+        "taHiddenOrLocked": true,
+        "selectstartPrevented": true,
+        "userSelectNone": true,
+        "hasUnlocked": false,
+        "editingCount": 0,
+        "taReadOnly": true
+      }
+    },
+    {
+      "ok": true,
+      "msg": "idle: selectstart prevented when locked",
+      "extra": {
+        "usesDisplayDiv": true,
+        "taHiddenOrLocked": true,
+        "selectstartPrevented": true,
+        "userSelectNone": true,
+        "hasUnlocked": false,
+        "editingCount": 0,
+        "taReadOnly": true
+      }
+    },
+    {
+      "ok": true,
+      "msg": "idle: no unlocked editors",
+      "extra": {
+        "usesDisplayDiv": true,
+        "taHiddenOrLocked": true,
+        "selectstartPrevented": true,
+        "userSelectNone": true,
+        "hasUnlocked": false,
+        "editingCount": 0,
+        "taReadOnly": true
+      }
+    },
+    {
+      "ok": true,
+      "msg": "idle: user-select none on text surface",
+      "extra": {
+        "usesDisplayDiv": true,
+        "taHiddenOrLocked": true,
+        "selectstartPrevented": true,
+        "userSelectNone": true,
+        "hasUnlocked": false,
+        "editingCount": 0,
+        "taReadOnly": true
+      }
+    },
+    {
+      "ok": true,
+      "msg": "many+android-race: draft survives 1s scrolls",
+      "extra": {
+        "before": 11,
+        "todos": 12,
+        "items": 12,
+        "editing": true,
+        "unlocked": true,
+        "activeTa": true,
+        "lastText": "",
+        "survived": true
+      }
+    },
+    {
+      "ok": true,
+      "msg": "many+android-race: editing",
+      "extra": {
+        "before": 11,
+        "todos": 12,
+        "items": 12,
+        "editing": true,
+        "unlocked": true,
+        "activeTa": true,
+        "lastText": "",
+        "survived": true
+      }
+    },
+    {
+      "ok": true,
+      "msg": "empty/catcher click does not create",
+      "extra": {
+        "beforeEmptyClick": 12,
+        "afterEmptyClick": 12
+      }
+    }
+  ],
+  "androidRace": {
+    "todos": 1,
+    "items": 1,
+    "editing": true,
+    "unlocked": true,
+    "activeTa": true,
+    "emptyVisible": false,
+    "suppress": 5,
+    "lastText": "",
+    "draftStillThere": true
+  },
+  "idleSel": {
+    "usesDisplayDiv": true,
+    "taHiddenOrLocked": true,
+    "selectstartPrevented": true,
+    "userSelectNone": true,
+    "hasUnlocked": false,
+    "editingCount": 0,
+    "taReadOnly": true
+  },
+  "manyRace": {
+    "before": 11,
+    "todos": 12,
+    "items": 12,
+    "editing": true,
+    "unlocked": true,
+    "activeTa": true,
+    "lastText": "",
+    "survived": true
+  },
+  "ts": "2026-11-04T08:51:27.109Z",
+  "apk": {
+    "path": "/workspace/白纸-加号禁选-v15.apk",
+    "also": "/workspace/baizhi/白纸-加号禁选-v15.apk",
+    "bytes": 4003011,
+    "sha256": "dfb5128e95ba9e511719950d0091af4aa6edd1ec4c6dceb352995993b6fccc0e",
+    "builtAt_AsiaHongKong": "2026-11-04 16:51:31 Asia/Hong_Kong"
+  },
+  "rootCause": {
+    "fabVanish": "Blank FAB draft removed on blur; paper scroll after ~900ms suppress (keyboard/viewport settle on Android WebView) called blur → auto-remove empty todo. Symptom: flash then gone.",
+    "idleSelect": "Idle used readonly textarea; Android WebView still shows selection handles / box-select despite user-select:none. Fix: idle renders non-input .todo-display div; textarea hidden until 编辑/FAB."
+  },
+  "fixes": [
+    "Idle: .todo-display div (user-select:none + selectstart preventDefault); textarea hidden until edit",
+    "armDraftGuard(2500) + suppress 2200ms; blank remove only when blur AND empty AND !inDraftGuard",
+    "paperScrollTo marks programmaticScroll — scroll handler never blurs during programmatic/guard",
+    "FAB: unlock/focus before scroll; renew guard on delayed placeNewestLow; re-focus only if programmaticScroll blur"
+  ],
+  "tests": {
+    "command": "node /workspace/baizhi/fab-v15-selftest.mjs",
+    "ok": true,
+    "passCount": 12,
+    "total": 12,
+    "verifiedAt_AsiaHongKong": "2026-11-04 16:51:31 Asia/Hong_Kong"
+  }
+}
