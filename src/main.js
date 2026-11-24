@@ -14,6 +14,7 @@ import wasmUrl from './generated/baizhi_core_bg.wasm?url'
 import { Capacitor } from '@capacitor/core'
 
 const IS_NATIVE = Capacitor.isNativePlatform()
+const SYNC_KEY = 'baizhi.sync.v1'
 /** @type {{ Haptics: any, ImpactStyle: any } | null} */
 let hapticsMod = null
 /** @type {{ StatusBar: any, Style: any } | null} */
@@ -53,6 +54,14 @@ async function setupNativeChrome() {
   try {
     const { App } = await import('@capacitor/app')
     App.addListener('backButton', () => {
+      if (!syncBackdrop.hidden) {
+        closeSyncSheet()
+        return
+      }
+      if (!searchWrap.hidden) {
+        closeSearch()
+        return
+      }
       if (!ctxMenu.hidden) {
         hideCtxMenu()
         return
@@ -73,6 +82,7 @@ const REDUCE_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matc
 const LONG_MS = 480
 const DOUBLE_MS = 320
 const SAVE_DEBOUNCE_MS = 120
+const SYNC_DEBOUNCE_MS = 1500
 
 function clearDomSelection() {
   try {
@@ -88,19 +98,58 @@ function clearDomSelection() {
   }
 }
 
-/** @typedef {{ id: string, text: string, createdAt: number, completed: boolean, completedAt?: number|null }} Todo */
+async function copyText(text) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch {}
+  try {
+    const tmp = document.createElement('textarea')
+    tmp.value = text
+    tmp.style.position = 'fixed'
+    tmp.style.opacity = '0'
+    document.body.appendChild(tmp)
+    tmp.select()
+    const ok = document.execCommand('copy')
+    tmp.remove()
+    return ok
+  } catch {
+    return false
+  }
+}
+
+/** @typedef {{ id: string, text: string, createdAt: number, completed: boolean, completedAt?: number|null, pinned?: boolean }} Todo */
 
 const app = document.querySelector('#app')
 
 app.innerHTML = `
   <header class="app-header">
-    <div class="app-meta" id="countMeta"></div>
+    <div class="header-left">
+      <button class="icon-btn" id="searchBtn" type="button" aria-label="搜索">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="7"/>
+          <path d="M20 20l-3.5-3.5"/>
+        </svg>
+      </button>
+      <div class="search-wrap" id="searchWrap" hidden>
+        <input class="search-input" id="searchInput" type="search" placeholder="搜索待办…" autocomplete="off" />
+        <button class="search-clear" id="searchClear" type="button" aria-label="清除搜索">×</button>
+      </div>
+    </div>
+    <div class="header-right">
+      <button class="sync-btn" id="syncBtn" type="button" data-state="idle" aria-label="云同步">
+        <span class="sync-dot"></span>
+      </button>
+      <div class="app-meta" id="countMeta"></div>
+    </div>
   </header>
   <main class="paper-scroll" id="paper" aria-label="白纸待办">
     <div class="empty-state" id="empty">
       <div class="empty-glyph" aria-hidden="true"></div>
       <p class="empty-title">轻写下第一件事</p>
-      <p class="empty-sub">点 + 新建 · 双击划线 · 长按菜单</p>
+      <p class="empty-sub">点 + 新建 · 长按 + 语音 · 双击划线 · 长按菜单</p>
     </div>
     <ul class="todo-list" id="list"></ul>
     <div class="tap-catcher" id="tapCatcher" aria-hidden="true"></div>
@@ -118,6 +167,11 @@ const countMeta = /** @type {HTMLElement} */ (document.getElementById('countMeta
 const paper = /** @type {HTMLElement} */ (document.getElementById('paper'))
 const fab = /** @type {HTMLButtonElement} */ (document.getElementById('fab'))
 const tapCatcher = /** @type {HTMLElement} */ (document.getElementById('tapCatcher'))
+const searchBtn = /** @type {HTMLButtonElement} */ (document.getElementById('searchBtn'))
+const searchWrap = /** @type {HTMLElement} */ (document.getElementById('searchWrap'))
+const searchInput = /** @type {HTMLInputElement} */ (document.getElementById('searchInput'))
+const searchClear = /** @type {HTMLButtonElement} */ (document.getElementById('searchClear'))
+const syncBtn = /** @type {HTMLButtonElement} */ (document.getElementById('syncBtn'))
 
 /** Floating long-press context menu — horizontal Android-style pill toolbar */
 const ctxMenu = document.createElement('div')
@@ -127,7 +181,7 @@ ctxMenu.setAttribute('role', 'menu')
 ctxMenu.innerHTML = `<button type="button" class="ctx-item" data-action="edit" role="menuitem">编辑</button>`
 document.body.appendChild(ctxMenu)
 
-/** Lightweight bottom toast (undo delete / backup feedback) */
+/** Lightweight bottom toast (undo delete / voice / backup / sync feedback) */
 const toastEl = document.createElement('div')
 toastEl.className = 'toast'
 toastEl.hidden = true
@@ -140,6 +194,37 @@ toastActionBtn.className = 'toast-action'
 toastActionBtn.hidden = true
 toastEl.append(toastTextEl, toastActionBtn)
 document.body.appendChild(toastEl)
+
+/** Minimal Cloud Sync Settings Sheet */
+const syncBackdrop = document.createElement('div')
+syncBackdrop.className = 'sync-backdrop'
+syncBackdrop.hidden = true
+syncBackdrop.innerHTML = `
+  <div class="sync-sheet" role="dialog" aria-label="云同步设置">
+    <h2 class="sync-title">云同步与备份</h2>
+    <p class="sync-status-text" id="syncStatusText">未配置云同步</p>
+    <label class="sync-field">
+      <span>同步地址</span>
+      <input id="syncUrlInput" type="url" placeholder="https://your-host:5986/baizhi" autocomplete="off" />
+    </label>
+    <label class="sync-field">
+      <span>同步口令（Token）</span>
+      <input id="syncTokenInput" type="password" placeholder="输入同步口令" autocomplete="off" />
+    </label>
+    <div class="sync-actions">
+      <button type="button" class="sync-btn-primary" id="syncSaveBtn">保存并同步</button>
+      <button type="button" class="sync-btn-secondary" id="syncBackupBtn">复制备份</button>
+      <button type="button" class="sync-btn-secondary" id="syncCloseBtn">关闭</button>
+    </div>
+  </div>
+`
+document.body.appendChild(syncBackdrop)
+const syncStatusText = /** @type {HTMLElement} */ (document.getElementById('syncStatusText'))
+const syncUrlInput = /** @type {HTMLInputElement} */ (document.getElementById('syncUrlInput'))
+const syncTokenInput = /** @type {HTMLInputElement} */ (document.getElementById('syncTokenInput'))
+const syncSaveBtn = /** @type {HTMLButtonElement} */ (document.getElementById('syncSaveBtn'))
+const syncBackupBtn = /** @type {HTMLButtonElement} */ (document.getElementById('syncBackupBtn'))
+const syncCloseBtn = /** @type {HTMLButtonElement} */ (document.getElementById('syncCloseBtn'))
 
 let toastTimer = 0
 /** @type {(() => void) | null} */
@@ -164,7 +249,9 @@ function showToast(message, { actionLabel = '', onAction = null, durationMs = 35
     toastActionHandler = onAction
   }
   toastEl.hidden = false
-  toastTimer = window.setTimeout(hideToast, durationMs)
+  if (durationMs > 0) {
+    toastTimer = window.setTimeout(hideToast, durationMs)
+  }
 }
 
 toastEl.addEventListener('pointerdown', (e) => e.stopPropagation())
@@ -176,6 +263,149 @@ toastActionBtn.addEventListener('click', (e) => {
 })
 
 setupNativeChrome()
+
+// Filter & search state
+/** @type {'all' | 'open' | 'done'} */
+let activeFilter = 'all'
+let searchQuery = ''
+
+// Cloud sync config
+function loadSyncConfig() {
+  try {
+    const raw = localStorage.getItem(SYNC_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      return {
+        url: String(parsed.url || '').trim(),
+        token: String(parsed.token || '').trim(),
+        lastSyncAt: Number(parsed.lastSyncAt || 0),
+      }
+    }
+  } catch {}
+  const defaultUrl =
+    !IS_NATIVE && location.protocol.startsWith('http') && location.pathname.startsWith('/baizhi')
+      ? `${location.origin}/baizhi`
+      : ''
+  return { url: defaultUrl, token: '', lastSyncAt: 0 }
+}
+
+let syncConfig = loadSyncConfig()
+let syncTimer = 0
+let syncInFlight = false
+
+function saveSyncConfig() {
+  try {
+    localStorage.setItem(SYNC_KEY, JSON.stringify(syncConfig))
+  } catch {}
+}
+
+function isSyncConfigured() {
+  return Boolean(syncConfig.url && syncConfig.token)
+}
+
+function setSyncState(state, detail = '') {
+  syncBtn.dataset.state = state
+  if (detail) {
+    syncStatusText.textContent = detail
+  } else if (!isSyncConfigured()) {
+    syncStatusText.textContent = '未配置云同步（数据仅存本机）'
+  } else if (syncConfig.lastSyncAt) {
+    syncStatusText.textContent = `上次同步：${formatStamp(syncConfig.lastSyncAt)}`
+  } else {
+    syncStatusText.textContent = '已配置，等待同步'
+  }
+}
+
+function syncEndpoint() {
+  const base = syncConfig.url.replace(/\/+$/, '')
+  return base.endsWith('/api/sync') ? base : `${base}/api/sync`
+}
+
+async function syncNow({ silent = true } = {}) {
+  if (!isSyncConfigured() || syncInFlight) return false
+  flushPendingSave()
+  syncInFlight = true
+  setSyncState('syncing', '正在同步…')
+  try {
+    const res = await fetch(syncEndpoint(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${syncConfig.token}`,
+      },
+      body: todos.sync_payload(),
+    })
+    if (!res.ok) {
+      throw new Error(res.status === 401 ? '口令错误' : `HTTP ${res.status}`)
+    }
+    const text = await res.text()
+    const changed = todos.merge_remote(text)
+    syncConfig.lastSyncAt = Date.now()
+    saveSyncConfig()
+    setSyncState('synced', `同步成功 · ${formatStamp(syncConfig.lastSyncAt)}`)
+    if (changed) {
+      const ae = document.activeElement
+      const isEditingNow = ae instanceof HTMLTextAreaElement && ae.classList.contains('todo-text')
+      if (!isEditingNow) renderAll()
+      else updateMeta()
+    }
+    if (!silent) showToast('云同步完成', { durationMs: 2000 })
+    return true
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : '网络异常'
+    setSyncState('error', `同步失败：${msg}`)
+    if (!silent) showToast(`同步失败：${msg}`, { durationMs: 2600 })
+    return false
+  } finally {
+    syncInFlight = false
+  }
+}
+
+function scheduleSync() {
+  if (!isSyncConfigured()) return
+  if (syncTimer) clearTimeout(syncTimer)
+  syncTimer = window.setTimeout(() => {
+    syncTimer = 0
+    syncNow({ silent: true })
+  }, SYNC_DEBOUNCE_MS)
+}
+
+function openSyncSheet() {
+  hideCtxMenu()
+  syncUrlInput.value = syncConfig.url || ''
+  syncTokenInput.value = syncConfig.token || ''
+  setSyncState(syncBtn.dataset.state || (isSyncConfigured() ? 'synced' : 'idle'))
+  syncBackdrop.hidden = false
+}
+
+function closeSyncSheet() {
+  syncBackdrop.hidden = true
+}
+
+syncBtn.addEventListener('click', (e) => {
+  e.stopPropagation()
+  openSyncSheet()
+})
+syncBackdrop.addEventListener('click', (e) => {
+  if (e.target === syncBackdrop) closeSyncSheet()
+})
+syncCloseBtn.addEventListener('click', closeSyncSheet)
+syncBackupBtn.addEventListener('click', () => {
+  copyBackupJson()
+})
+syncSaveBtn.addEventListener('click', async () => {
+  syncConfig.url = syncUrlInput.value.trim().replace(/\/+$/, '')
+  syncConfig.token = syncTokenInput.value.trim()
+  saveSyncConfig()
+  if (!isSyncConfigured()) {
+    setSyncState('idle', '已清除同步配置（仅本地保存）')
+    showToast('已切换为仅本地模式', { durationMs: 2000 })
+    closeSyncSheet()
+    return
+  }
+  const ok = await syncNow({ silent: false })
+  if (ok) closeSyncSheet()
+})
 
 // Small, touch-following edge resistance. Native scrolling remains in charge
 // everywhere except a short drag past either real scroll boundary.
@@ -252,10 +482,14 @@ paper.addEventListener(
 
 function fillCtxMenu(todo) {
   const done = Boolean(todo?.completed)
+  const pinned = Boolean(todo?.pinned)
   const toggleLabel = done ? '取消完成' : '完成'
+  const pinLabel = pinned ? '取消置顶' : '置顶'
   ctxMenu.innerHTML =
     `<button type="button" class="ctx-item" data-action="edit" role="menuitem">编辑</button>` +
     `<button type="button" class="ctx-item" data-action="toggle" role="menuitem">${toggleLabel}</button>` +
+    `<button type="button" class="ctx-item" data-action="pin" role="menuitem">${pinLabel}</button>` +
+    `<button type="button" class="ctx-item" data-action="copy" role="menuitem">复制</button>` +
     `<button type="button" class="ctx-item ctx-item-danger" data-action="delete" role="menuitem">删除</button>`
 }
 
@@ -265,24 +499,6 @@ let reelRaf = 0
 let ctxTargetId = null
 /** @type {WeakMap<HTMLTextAreaElement, () => void>} */
 const enterEditByTa = new WeakMap()
-/**
- * Per-row cached DOM references, gesture state, and last-written inline styles.
- * @type {WeakMap<HTMLLIElement, {
- *   id: string,
- *   face: HTMLElement,
- *   ta: HTMLTextAreaElement,
- *   timeEl: HTMLElement,
- *   editing: boolean,
- *   enterEdit: () => void,
- *   exitEdit: () => void,
- *   lockTextarea: () => void,
- *   lastTapAt: number,
- *   suppressClickUntil: number,
- *   lastTransform: string,
- *   lastFilter: string,
- *   lastOpacity: string,
- * }>}
- */
 const rowStateByEl = new WeakMap()
 
 /** Timestamp until which blank-draft accidental blur must re-focus (FAB settle). */
@@ -304,6 +520,7 @@ function flushPendingSave() {
   try {
     todos.flush()
   } catch {}
+  scheduleSync()
 }
 
 function scheduleSave() {
@@ -314,6 +531,7 @@ function scheduleSave() {
 
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) flushPendingSave()
+  else syncNow({ silent: true })
 })
 window.addEventListener('pagehide', flushPendingSave)
 
@@ -336,6 +554,33 @@ function formatStamp(ms) {
   return stamp(ms, Date.now())
 }
 
+function formatTimeLabel(todo) {
+  const base = formatStamp(todo.createdAt)
+  return todo.pinned ? `置顶 · ${base}` : base
+}
+
+function applyFilters() {
+  const q = searchQuery.trim().toLowerCase()
+  const children = listEl.children
+  for (let i = 0; i < children.length; i++) {
+    const el = /** @type {HTMLLIElement} */ (children[i])
+    const isDone = el.classList.contains('is-done')
+    const isEditing = el.classList.contains('is-editing')
+    let visible = true
+    if (!isEditing) {
+      if (activeFilter === 'open' && isDone) visible = false
+      else if (activeFilter === 'done' && !isDone) visible = false
+      if (visible && q) {
+        const state = rowStateByEl.get(el)
+        const txt = (state ? state.ta.value : el.textContent || '').toLowerCase()
+        if (!txt.includes(q)) visible = false
+      }
+    }
+    el.classList.toggle('is-hidden-filter', !visible)
+  }
+  scheduleReel()
+}
+
 function updateMeta() {
   const total = todos.count()
   const done = todos.done_count()
@@ -343,10 +588,70 @@ function updateMeta() {
   if (total === 0) {
     countMeta.textContent = ''
   } else {
-    countMeta.innerHTML = `<span class="meta-open">未完成 ${open}</span><span class="meta-sep">·</span><span class="meta-done">已完成 ${done}</span>`
+    countMeta.innerHTML =
+      `<button type="button" class="meta-chip meta-open${activeFilter === 'open' ? ' is-active' : ''}" data-filter="open">未完成 ${open}</button>` +
+      `<span class="meta-sep">·</span>` +
+      `<button type="button" class="meta-chip meta-done${activeFilter === 'done' ? ' is-active' : ''}" data-filter="done">已完成 ${done}</button>`
   }
   emptyEl.classList.toggle('is-visible', total === 0)
 }
+
+countMeta.addEventListener('click', (e) => {
+  const chip = /** @type {HTMLElement | null} */ (
+    e.target instanceof HTMLElement ? e.target.closest('[data-filter]') : null
+  )
+  if (!chip) return
+  e.stopPropagation()
+  const target = /** @type {'open' | 'done'} */ (chip.dataset.filter)
+  activeFilter = activeFilter === target ? 'all' : target
+  hapticLight()
+  updateMeta()
+  applyFilters()
+})
+
+// Minimal header search
+function openSearch() {
+  hideCtxMenu()
+  searchBtn.hidden = true
+  searchWrap.hidden = false
+  searchInput.focus()
+}
+
+function closeSearch() {
+  searchQuery = ''
+  searchInput.value = ''
+  searchWrap.hidden = true
+  searchBtn.hidden = false
+  applyFilters()
+}
+
+searchBtn.addEventListener('click', (e) => {
+  e.stopPropagation()
+  openSearch()
+})
+searchClear.addEventListener('click', (e) => {
+  e.stopPropagation()
+  closeSearch()
+})
+searchInput.addEventListener('input', () => {
+  searchQuery = searchInput.value
+  applyFilters()
+})
+searchInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    e.preventDefault()
+    closeSearch()
+  }
+})
+searchInput.addEventListener('blur', () => {
+  if (!searchInput.value.trim()) {
+    window.setTimeout(() => {
+      if (document.activeElement !== searchInput && !searchInput.value.trim()) {
+        closeSearch()
+      }
+    }, 120)
+  }
+})
 
 function autoSize(ta) {
   ta.style.height = 'auto'
@@ -413,9 +718,7 @@ function revealEditor(ta) {
 let reelCap = 64
 let reelIn = new Float64Array(reelCap * 3)
 let reelOut = new Float64Array(reelCap * 6)
-/** @type {Array<{ el: HTMLLIElement, state: any }>} */
 const visibleRows = []
-/** @type {Array<{ el: HTMLLIElement, state: any }>} */
 const offscreenRows = []
 
 function ensureReelCapacity(n) {
@@ -435,6 +738,7 @@ function updateReel() {
   if (REDUCE_MOTION) {
     for (let i = 0; i < len; i++) {
       const el = /** @type {HTMLLIElement} */ (children[i])
+      if (el.classList.contains('is-hidden-filter')) continue
       const state = rowStateByEl.get(el)
       const face = state ? state.face : el.querySelector('.todo-face')
       if (face) {
@@ -462,9 +766,9 @@ function updateReel() {
   visibleRows.length = 0
   offscreenRows.length = 0
 
-  // 1) Read geometry together before writing styles: no per-row layout flush.
   for (let i = 0; i < len; i++) {
     const el = /** @type {HTMLLIElement} */ (children[i])
+    if (el.classList.contains('is-hidden-filter')) continue
     const state = rowStateByEl.get(el)
     const box = el.getBoundingClientRect()
     if (box.bottom < minY || box.top > maxY) {
@@ -480,7 +784,6 @@ function updateReel() {
     visibleRows.push({ el, state })
   }
 
-  // 2) Single Wasm call for all visible rows
   const visCount = visibleRows.length
   if (visCount > 0) {
     reel_batch(
@@ -491,7 +794,6 @@ function updateReel() {
     )
   }
 
-  // 3) Write only changed inline styles
   for (let i = 0; i < offscreenRows.length; i++) {
     const { el, state } = offscreenRows[i]
     if (!state || state.lastOpacity !== '0') {
@@ -577,10 +879,9 @@ function beginPress(li, clientX, clientY, pointerId) {
     activeLongTimer = 0
     if (!pressActive || activePressLi !== li || !li.isConnected) return
     longFired = true
-    st.lastTapAt = 0 // cancel pending double-tap
+    st.lastTapAt = 0
     clearPressVisual(li)
     hapticLight()
-    // Long-press alone: show menu ONLY — never unlock / focus / open keyboard / toggle done / select text
     st.lockTextarea()
     clearDomSelection()
     if (document.activeElement === st.ta) {
@@ -607,7 +908,6 @@ function movePress(clientX, clientY) {
   const dx = clientX - pressStartX
   const dy = clientY - pressStartY
   if (dx * dx + dy * dy > 64) {
-    // Real scroll/drag — abort long-press
     endPressCleanup()
   }
 }
@@ -636,7 +936,6 @@ function finishPress(li) {
     toggleDone(st.id)
   } else {
     st.lastTapAt = now
-    // Single tap: dismiss menu only (never open keyboard)
     hideCtxMenu()
   }
 }
@@ -664,9 +963,6 @@ listEl.addEventListener('pointerup', (ev) => {
   finishPress(rowFromEvent(ev))
 })
 
-// Capture phase ensures even non-bubbling synthetic pointercancel on <li> is caught.
-// Android WebView often fires pointercancel during long-press (selection gesture);
-// keep pressActive + activeLongTimer so the menu can still fire (scroll cancels it).
 listEl.addEventListener(
   'pointercancel',
   (ev) => {
@@ -686,7 +982,6 @@ listEl.addEventListener(
   { capture: true },
 )
 
-// Touch fallback: ensures end even if pointerup is lost after cancel
 listEl.addEventListener(
   'touchstart',
   (ev) => {
@@ -739,7 +1034,7 @@ listEl.addEventListener('contextmenu', (ev) => {
   if (st && !st.editing) ev.preventDefault()
 })
 
-// Single merged scroll handler: inertial edge + reel + menu dismiss + cancel phantom long-press
+// Single merged scroll handler
 paper.addEventListener(
   'scroll',
   () => {
@@ -766,13 +1061,13 @@ paper.addEventListener(
  */
 function createItemEl(todo, { animate = false, startEditing = false } = {}) {
   const li = document.createElement('li')
-  li.className = `todo-item${todo.completed ? ' is-done' : ''}${animate ? ' is-entering' : ''}`
+  li.className = `todo-item${todo.completed ? ' is-done' : ''}${todo.pinned ? ' is-pinned' : ''}${animate ? ' is-entering' : ''}`
   li.dataset.id = todo.id
   li.dataset.createdAt = String(todo.createdAt)
   li.innerHTML = `
     <div class="todo-face">
       <div class="todo-body">
-        <time class="todo-time" datetime="${new Date(todo.createdAt).toISOString()}">${formatStamp(todo.createdAt)}</time>
+        <time class="todo-time" datetime="${new Date(todo.createdAt).toISOString()}">${formatTimeLabel(todo)}</time>
         <textarea class="todo-text" rows="1" maxlength="280" placeholder="" enterkeyhint="done" readonly></textarea>
       </div>
     </div>
@@ -855,7 +1150,6 @@ function createItemEl(todo, { animate = false, startEditing = false } = {}) {
     requestAnimationFrame(() => enterEdit())
   }
 
-  // Locked text is not hit-tested; keep a defensive guard for synthetic pointer events.
   ta.addEventListener('pointerdown', (ev) => {
     if (state.editing) return
     ev.preventDefault()
@@ -869,7 +1163,6 @@ function createItemEl(todo, { animate = false, startEditing = false } = {}) {
 
   ta.addEventListener('focus', () => {
     if (!state.editing) {
-      // Hard block: locked items must never keep focus / open IME
       try {
         ta.blur()
       } catch {}
@@ -914,8 +1207,6 @@ function createItemEl(todo, { animate = false, startEditing = false } = {}) {
     const intentional = expectIntentionalBlur > 0
     const trimmed = trim(ta.value)
 
-    // Accidental blur from scroll / IME / viewport settle during FAB draft:
-    // re-focus instead of discarding mid-settle.
     if (!intentional && Date.now() < draftGuardUntil && !isMeaningful(trimmed)) {
       state.editing = true
       unlockTextarea()
@@ -930,7 +1221,6 @@ function createItemEl(todo, { animate = false, startEditing = false } = {}) {
 
     exitEdit()
 
-    // Blank / whitespace-only → discard completely (DOM + model + storage)
     if (!isMeaningful(trimmed)) {
       removeTodo(todo.id)
       return
@@ -941,6 +1231,7 @@ function createItemEl(todo, { animate = false, startEditing = false } = {}) {
     flushPendingSave()
     ta.value = trimmed
     autoSize(ta)
+    applyFilters()
     scheduleReel()
   })
 
@@ -965,31 +1256,52 @@ function renderAll() {
   for (const t of ordered) frag.appendChild(createItemEl(t))
   listEl.appendChild(frag)
   updateMeta()
+  applyFilters()
   scheduleReel()
 }
 
 function toggleDone(id) {
   flushPendingSave()
+  const prev = todos.get(id)
+  const wasPinned = Boolean(prev?.pinned)
   const t = todos.toggle(id, Date.now())
   if (!t) return
+  scheduleSync()
+  if (wasPinned && t.completed) {
+    renderAll()
+    return
+  }
   const safe = id.replace(/"/g, '')
   const el = listEl.querySelector(`[data-id="${safe}"]`)
   if (el) {
     el.classList.toggle('is-done', t.completed)
+    el.classList.toggle('is-pinned', Boolean(t.pinned))
     el.classList.remove('is-state-bounce')
     requestAnimationFrame(() => el.classList.add('is-state-bounce'))
     el.addEventListener('animationend', () => el.classList.remove('is-state-bounce'), { once: true })
     updateMeta()
+    applyFilters()
     scheduleReel()
   } else {
     renderAll()
   }
 }
 
+function togglePin(id) {
+  flushPendingSave()
+  const t = todos.toggle_pin(id, Date.now())
+  if (!t) return
+  scheduleSync()
+  renderAll()
+  showToast(t.pinned ? '已置顶' : '已取消置顶', { durationMs: 1600 })
+}
+
 function removeTodo(id, { allowUndo = false } = {}) {
   flushPendingSave()
   const prev = allowUndo ? todos.get(id) : null
-  if (!todos.remove(id)) return
+  const removed = isSyncConfigured() ? todos.soft_remove(id, Date.now()) : todos.remove(id)
+  if (!removed) return
+  scheduleSync()
   const safe = id.replace(/"/g, '')
   const li = listEl.querySelector(`.todo-item[data-id="${safe}"]`)
   if (li) li.remove()
@@ -1006,6 +1318,7 @@ function removeTodo(id, { allowUndo = false } = {}) {
           Boolean(prev.completed),
           prev.completedAt ?? null,
         )
+        scheduleSync()
         renderAll()
       },
     })
@@ -1015,9 +1328,11 @@ function removeTodo(id, { allowUndo = false } = {}) {
 /** @param {{ focus?: boolean }} [opts] */
 function addTodo({ focus = true } = {}) {
   hapticLight()
+  if (activeFilter === 'done') {
+    activeFilter = 'all'
+  }
   /** @type {Todo} */
   const todo = todos.add()
-  // Do NOT save empty draft — never persist blank rows until first non-whitespace
   if (focus) armDraftGuard(2800)
   emptyEl.classList.remove('is-visible')
 
@@ -1031,44 +1346,130 @@ function addTodo({ focus = true } = {}) {
   return todo
 }
 
+// Voice quick capture (long-press FAB)
+/** @type {any} */
+let activeRecognition = null
+
+function stopVoiceCapture() {
+  fab.classList.remove('is-recording')
+  if (activeRecognition) {
+    try {
+      activeRecognition.stop()
+    } catch {}
+    activeRecognition = null
+  }
+}
+
+function startVoiceCapture() {
+  hideCtxMenu()
+  const SpeechRec = /** @type {any} */ (window).SpeechRecognition || /** @type {any} */ (window).webkitSpeechRecognition
+  if (!SpeechRec) {
+    addTodo({ focus: true })
+    showToast('已打开输入框（可直接点键盘语音）', { durationMs: 2400 })
+    return
+  }
+  stopVoiceCapture()
+  hapticLight()
+  fab.classList.add('is-recording')
+  showToast('正在聆听…', { actionLabel: '停止', onAction: stopVoiceCapture, durationMs: 0 })
+
+  let finalTranscript = ''
+  let latestTranscript = ''
+  const rec = new SpeechRec()
+  rec.lang = 'zh-CN'
+  rec.interimResults = true
+  rec.continuous = false
+  activeRecognition = rec
+
+  rec.onresult = (ev) => {
+    let interim = ''
+    for (let i = ev.resultIndex; i < ev.results.length; i++) {
+      const chunk = ev.results[i][0]?.transcript || ''
+      if (ev.results[i].isFinal) finalTranscript += chunk
+      else interim += chunk
+    }
+    latestTranscript = (finalTranscript + interim).trim()
+    if (latestTranscript) {
+      showToast(`🎙 ${latestTranscript}`, { actionLabel: '完成', onAction: stopVoiceCapture, durationMs: 0 })
+    }
+  }
+
+  rec.onerror = () => {
+    stopVoiceCapture()
+    hideToast()
+    addTodo({ focus: true })
+    showToast('无法直录语音，已打开输入框', { durationMs: 2400 })
+  }
+
+  rec.onend = () => {
+    fab.classList.remove('is-recording')
+    activeRecognition = null
+    const text = trim(finalTranscript || latestTranscript)
+    hideToast()
+    if (isMeaningful(text)) {
+      const todo = todos.add()
+      todos.set_text(todo.id, text)
+      saveDirty = true
+      flushPendingSave()
+      renderAll()
+      paper.scrollTop = paper.scrollHeight
+      showToast('语音已记下', { durationMs: 1800 })
+    }
+  }
+
+  try {
+    rec.start()
+  } catch {
+    stopVoiceCapture()
+    addTodo({ focus: true })
+    showToast('已打开输入框（可直接点键盘语音）', { durationMs: 2400 })
+  }
+}
+
+let fabPressTimer = 0
+let suppressFabClickUntil = 0
+
+function cancelFabPress() {
+  if (fabPressTimer) {
+    clearTimeout(fabPressTimer)
+    fabPressTimer = 0
+  }
+}
+
 function activateFab(e) {
   e?.preventDefault?.()
   e?.stopPropagation?.()
+  if (performance.now() < suppressFabClickUntil) return
+  if (activeRecognition) {
+    stopVoiceCapture()
+    return
+  }
   hideCtxMenu()
   addTodo({ focus: true })
 }
 
 fab.addEventListener('pointerdown', (e) => {
-  // Keep the current editor / IME focused until the new editor is ready.
   e.preventDefault()
   e.stopPropagation()
+  if (activeRecognition) return
+  cancelFabPress()
+  fabPressTimer = window.setTimeout(() => {
+    fabPressTimer = 0
+    suppressFabClickUntil = performance.now() + 800
+    startVoiceCapture()
+  }, LONG_MS)
 })
+fab.addEventListener('pointerup', cancelFabPress)
+fab.addEventListener('pointercancel', cancelFabPress)
+fab.addEventListener('pointerleave', cancelFabPress)
 fab.addEventListener('click', activateFab)
 
-// Hidden backup export: long-press (600ms) or double-click on top-right countMeta
+// Hidden backup export
 async function copyBackupJson() {
   flushPendingSave()
   const json = todos.export_json()
   const count = todos.items(false).filter((t) => isMeaningful(t.text)).length
-  let copied = false
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(json)
-      copied = true
-    }
-  } catch {}
-  if (!copied) {
-    try {
-      const tmp = document.createElement('textarea')
-      tmp.value = json
-      tmp.style.position = 'fixed'
-      tmp.style.opacity = '0'
-      document.body.appendChild(tmp)
-      tmp.select()
-      copied = document.execCommand('copy')
-      tmp.remove()
-    } catch {}
-  }
+  const copied = await copyText(json)
   hapticLight()
   showToast(copied ? `已复制备份（${count} 条）` : '备份复制失败', { durationMs: 2200 })
 }
@@ -1095,7 +1496,7 @@ countMeta.addEventListener('dblclick', () => {
   copyBackupJson()
 })
 
-// Blank paper / catcher: dismiss menu + discard blank draft — FAB is the sole create path
+// Blank paper / catcher
 tapCatcher.addEventListener('click', (e) => {
   e.stopPropagation()
   dismissMenuAndBlur({ blurActive: true })
@@ -1117,7 +1518,7 @@ paper.addEventListener('click', (e) => {
 })
 
 ctxMenu.addEventListener('pointerdown', (e) => e.stopPropagation())
-ctxMenu.addEventListener('click', (e) => {
+ctxMenu.addEventListener('click', async (e) => {
   e.stopPropagation()
   const btn = /** @type {HTMLElement|null} */ (
     e.target instanceof HTMLElement ? e.target.closest('[data-action]') : null
@@ -1133,6 +1534,16 @@ ctxMenu.addEventListener('click', (e) => {
   } else if (action === 'toggle' && id) {
     hapticLight()
     toggleDone(id)
+  } else if (action === 'pin' && id) {
+    hapticLight()
+    togglePin(id)
+  } else if (action === 'copy' && id) {
+    const todo = todos.get(id)
+    if (todo) {
+      hapticLight()
+      const ok = await copyText(todo.text)
+      showToast(ok ? '已复制' : '复制失败', { durationMs: 1600 })
+    }
   } else if (action === 'delete' && id) {
     hapticLight()
     removeTodo(id, { allowUndo: true })
@@ -1141,6 +1552,14 @@ ctxMenu.addEventListener('click', (e) => {
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
+    if (!syncBackdrop.hidden) {
+      closeSyncSheet()
+      return
+    }
+    if (!searchWrap.hidden) {
+      closeSearch()
+      return
+    }
     dismissMenuAndBlur({ blurActive: true })
   }
 })
@@ -1169,17 +1588,23 @@ setInterval(() => {
     const state = rowStateByEl.get(el)
     const timeEl = state ? state.timeEl : el.querySelector('.todo-time')
     if (!timeEl) continue
-    const next = stamp(createdAt, now)
+    const base = stamp(createdAt, now)
+    const next = el.classList.contains('is-pinned') ? `置顶 · ${base}` : base
     if (timeEl.textContent !== next) timeEl.textContent = next
   }
 }, 60_000)
 
+setSyncState(isSyncConfigured() ? 'synced' : 'idle')
 renderAll()
+if (isSyncConfigured()) {
+  syncNow({ silent: true })
+}
 
 window.__baizhi = {
   addTodo,
   removeTodo,
   toggleDone,
+  togglePin,
   todos: () => todos.items(false),
   formatStamp,
   renderAll,
@@ -1193,4 +1618,6 @@ window.__baizhi = {
   isMeaningful,
   flushPendingSave,
   copyBackupJson,
+  syncNow,
+  openSyncSheet,
 }

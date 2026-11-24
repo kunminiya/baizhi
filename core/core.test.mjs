@@ -113,7 +113,7 @@ test('v27 set_text/flush, restore, export_json and leap-year stamp', () => {
   assert.equal(data.has(key), false)
   store.flush()
   assert.equal(JSON.parse(data.get(key)).length, 1)
-  assert.equal(store.export_json(), data.get(key))
+  assert.equal(JSON.parse(store.export_json())[0].text, 'hello')
   assert.equal(store.remove(t.id), true)
   assert.equal(JSON.parse(data.get(key)).length, 0)
   store.restore(t.id, 'hello', t.createdAt, true, 999)
@@ -123,5 +123,43 @@ test('v27 set_text/flush, restore, export_json and leap-year stamp', () => {
   assert.equal(restored.completedAt, 999)
   // Leap day in HKT: 2024-02-29 08:30 HKT = 2024-02-29T00:30:00Z
   assert.equal(stamp(Date.parse('2024-02-29T00:30:00Z'), Date.parse('2024-03-05T00:00:00Z')), '02-29 08:30')
+  store.free()
+})
+
+test('v28 pin ordering, soft_remove tombstones, and LWW merge_remote', () => {
+  const key = 'baizhi.todos.v1'
+  const data = new Map()
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
+    getItem: k => data.get(k) ?? null, setItem: (k, value) => data.set(k, value),
+  } })
+  const store = new Todos()
+  const a = store.add(); store.edit(a.id, 'First')
+  const b = store.add(); store.edit(b.id, 'Second')
+  // Pin First -> ordered items puts pinned at bottom focal zone
+  const pinnedA = store.toggle_pin(a.id, Date.now() + 10)
+  assert.equal(pinnedA.pinned, true)
+  const ordered = store.items(true)
+  assert.equal(ordered[ordered.length - 1].id, a.id)
+  // Completing a pinned item automatically unpins it
+  const doneA = store.toggle(a.id, Date.now() + 20)
+  assert.equal(doneA.completed, true)
+  assert.equal(Boolean(doneA.pinned), false)
+  // Soft remove creates tombstone in sync_payload but hides from items()
+  assert.equal(store.soft_remove(b.id, Date.now() + 30), true)
+  assert.equal(store.count(), 1)
+  const payload = JSON.parse(store.sync_payload())
+  assert.equal(payload.items.length, 2)
+  assert.ok(payload.items.find(x => x.id === b.id).deletedAt > 0)
+  // Merge remote newer item & remote update
+  const changed = store.merge_remote(JSON.stringify({
+    items: [
+      { id: 'remote-1', text: 'From PC', createdAt: 1000, updatedAt: 2000, completed: false, completedAt: null, pinned: true, deletedAt: null },
+      { id: a.id, text: 'First (edited on PC)', createdAt: a.createdAt, updatedAt: Date.now() + 5000, completed: false, completedAt: null, pinned: false, deletedAt: null },
+    ],
+  }))
+  assert.equal(changed, true)
+  assert.equal(store.count(), 2)
+  assert.equal(store.get('remote-1').pinned, true)
+  assert.equal(store.get(a.id).text, 'First (edited on PC)')
   store.free()
 })

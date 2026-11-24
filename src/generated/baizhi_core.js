@@ -398,7 +398,6 @@ export class Todos {
         return ret;
     }
     /**
-     * Update text in memory and immediately persist (keeps exact legacy API contract).
      * @param {string} id
      * @param {string} text
      */
@@ -409,8 +408,6 @@ export class Todos {
         }
     }
     /**
-     * Update text in memory without immediate localStorage write (for debounced typing).
-     * Returns true if the row transitioned from blank/non-meaningful to meaningful.
      * @param {string} id
      * @param {string} text
      * @returns {boolean}
@@ -419,9 +416,6 @@ export class Todos {
         const ret = wasm.todos_set_text(this.__wbg_ptr, id, text);
         return ret !== 0;
     }
-    /**
-     * Flush current meaningful todos to localStorage.
-     */
     flush() {
         const ret = wasm.todos_flush(this.__wbg_ptr);
         if (ret[1]) {
@@ -429,7 +423,6 @@ export class Todos {
         }
     }
     /**
-     * Restore a previously deleted todo (preserving original id, createdAt, completed state).
      * @param {string} id
      * @param {string} text
      * @param {number} created
@@ -468,10 +461,61 @@ export class Todos {
     }
     /**
      * @param {string} id
+     * @param {number} now
+     * @returns {any}
+     */
+    toggle_pin(id, now) {
+        const ret = wasm.todos_toggle_pin(this.__wbg_ptr, id, now);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * Removes a todo. Empty drafts are dropped outright; meaningful items become soft-delete
+     * tombstones if `keep_tombstone` is true (default via `remove_soft`), or dropped in `remove`.
+     * @param {string} id
      * @returns {boolean}
      */
     remove(id) {
         const ret = wasm.todos_remove(this.__wbg_ptr, id);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] !== 0;
+    }
+    /**
+     * Soft-delete a meaningful todo so cloud sync propagates deletion across devices.
+     * @param {string} id
+     * @param {number} now
+     * @returns {boolean}
+     */
+    soft_remove(id, now) {
+        const ret = wasm.todos_soft_remove(this.__wbg_ptr, id, now);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] !== 0;
+    }
+    /**
+     * Build JSON payload `{ "items": [...] }` for cloud sync (includes tombstones).
+     * @returns {string}
+     */
+    sync_payload() {
+        const ret = wasm.todos_sync_payload(this.__wbg_ptr);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * Merge remote items (JSON array or `{ items: [...] }`) using Last-Write-Wins on `updatedAt`.
+     * Returns true if local state changed.
+     * @param {string} raw
+     * @returns {boolean}
+     */
+    merge_remote(raw) {
+        const ret = wasm.todos_merge_remote(this.__wbg_ptr, raw);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
@@ -542,11 +586,11 @@ async function __wbg_load(module, imports) {
 function __wbg_get_imports() {
     const imports = {};
     imports.wbg = {};
-    imports.wbg.__wbg_Number_b520dcb0b0402ff8 = function() { return handleError(function (arg0) {
+    imports.wbg.__wbg_Number_ef533cec44726566 = function() { return handleError(function (arg0) {
         const ret = Number(arg0);
         return ret;
     }, arguments) };
-    imports.wbg.__wbg_String_89e32312480c38e5 = function() { return handleError(function (arg0) {
+    imports.wbg.__wbg_String_045b8fd031567085 = function() { return handleError(function (arg0) {
         const ret = String(arg0);
         return ret;
     }, arguments) };
@@ -554,7 +598,7 @@ function __wbg_get_imports() {
         const ret = Array.from(arg0);
         return ret;
     };
-    imports.wbg.__wbg_getItem_ee3f1a2dedf2ef84 = function() { return handleError(function (arg0, arg1) {
+    imports.wbg.__wbg_getItem_0d1235bef16e6a10 = function() { return handleError(function (arg0, arg1) {
         const ret = localStorage.getItem(getStringFromWasm0(arg0, arg1));
         return ret;
     }, arguments) };
@@ -594,7 +638,7 @@ function __wbg_get_imports() {
         const ret = Date.now();
         return ret;
     };
-    imports.wbg.__wbg_parse_9786109914b8474b = function() { return handleError(function (arg0) {
+    imports.wbg.__wbg_parse_c9eeca8b2b458018 = function() { return handleError(function (arg0) {
         const ret = JSON.parse(arg0);
         return ret;
     }, arguments) };
@@ -606,7 +650,7 @@ function __wbg_get_imports() {
         const ret = Math.random();
         return ret;
     };
-    imports.wbg.__wbg_setItem_d3db6959797d5401 = function() { return handleError(function (arg0, arg1, arg2) {
+    imports.wbg.__wbg_setItem_1d394cd6d548a0f5 = function() { return handleError(function (arg0, arg1, arg2) {
         localStorage.setItem(getStringFromWasm0(arg0, arg1), arg2);
     }, arguments) };
     imports.wbg.__wbg_set_bb8cecf6a62b9f46 = function() { return handleError(function (arg0, arg1, arg2) {

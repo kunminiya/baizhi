@@ -29,7 +29,7 @@
     {
       "name": "empty_hint_v19",
       "pass": true,
-      "detail": "点 + 新建 · 双击划线 · 长按菜单"
+      "detail": "点 + 新建 · 长按 + 语音 · 双击划线 · 长按菜单"
     },
     {
       "name": "fab_empty_creates_ui_item",
@@ -104,22 +104,22 @@
     {
       "name": "longpress_opens_menu",
       "pass": true,
-      "detail": "{\"menuHidden\":false,\"menuOpenClass\":true,\"labels\":[{\"action\":\"edit\",\"text\":\"编辑\"},{\"action\":\"toggle\",\"text\":\"完成\"},{\"action\":\"delete\",\"text\":\"删除\"}],\"completed\":false,\"hasDoneClass\":false,\"itemMenuOpen\":true,\"focused\":false,\"editing\":false,\"zIndex\":\"100\"}"
+      "detail": "{\"menuHidden\":false,\"menuOpenClass\":true,\"labels\":[{\"action\":\"edit\",\"text\":\"编辑\"},{\"action\":\"toggle\",\"text\":\"完成\"},{\"action\":\"pin\",\"text\":\"置顶\"},{\"action\":\"copy\",\"text\":\"复制\"},{\"action\":\"delete\",\"text\":\"删除\"}],\"completed\":false,\"hasDoneClass\":false,\"itemMenuOpen\":true,\"focused\":false,\"editing\":false,\"zIndex\":\"100\"}"
     },
     {
       "name": "longpress_does_not_toggle",
       "pass": true,
-      "detail": "{\"menuHidden\":false,\"menuOpenClass\":true,\"labels\":[{\"action\":\"edit\",\"text\":\"编辑\"},{\"action\":\"toggle\",\"text\":\"完成\"},{\"action\":\"delete\",\"text\":\"删除\"}],\"completed\":false,\"hasDoneClass\":false,\"itemMenuOpen\":true,\"focused\":false,\"editing\":false,\"zIndex\":\"100\"}"
+      "detail": "{\"menuHidden\":false,\"menuOpenClass\":true,\"labels\":[{\"action\":\"edit\",\"text\":\"编辑\"},{\"action\":\"toggle\",\"text\":\"完成\"},{\"action\":\"pin\",\"text\":\"置顶\"},{\"action\":\"copy\",\"text\":\"复制\"},{\"action\":\"delete\",\"text\":\"删除\"}],\"completed\":false,\"hasDoneClass\":false,\"itemMenuOpen\":true,\"focused\":false,\"editing\":false,\"zIndex\":\"100\"}"
     },
     {
       "name": "longpress_does_not_focus",
       "pass": true,
-      "detail": "{\"menuHidden\":false,\"menuOpenClass\":true,\"labels\":[{\"action\":\"edit\",\"text\":\"编辑\"},{\"action\":\"toggle\",\"text\":\"完成\"},{\"action\":\"delete\",\"text\":\"删除\"}],\"completed\":false,\"hasDoneClass\":false,\"itemMenuOpen\":true,\"focused\":false,\"editing\":false,\"zIndex\":\"100\"}"
+      "detail": "{\"menuHidden\":false,\"menuOpenClass\":true,\"labels\":[{\"action\":\"edit\",\"text\":\"编辑\"},{\"action\":\"toggle\",\"text\":\"完成\"},{\"action\":\"pin\",\"text\":\"置顶\"},{\"action\":\"copy\",\"text\":\"复制\"},{\"action\":\"delete\",\"text\":\"删除\"}],\"completed\":false,\"hasDoneClass\":false,\"itemMenuOpen\":true,\"focused\":false,\"editing\":false,\"zIndex\":\"100\"}"
     },
     {
       "name": "menu_has_edit_toggle_delete",
       "pass": true,
-      "detail": "编辑|完成|删除"
+      "detail": "编辑|完成|置顶|复制|删除"
     },
     {
       "name": "ctx_menu_z_index_high",
@@ -214,17 +214,17 @@
     {
       "name": "repeat_add_0",
       "pass": true,
-      "detail": "{\"visible\":true,\"previousVisible\":true,\"focused\":true,\"tail\":159}"
+      "detail": "{\"visible\":true,\"previousVisible\":true,\"focused\":true,\"tail\":169}"
     },
     {
       "name": "repeat_add_1",
       "pass": true,
-      "detail": "{\"visible\":true,\"previousVisible\":true,\"focused\":true,\"tail\":254}"
+      "detail": "{\"visible\":true,\"previousVisible\":true,\"focused\":true,\"tail\":264}"
     },
     {
       "name": "repeat_add_2",
       "pass": true,
-      "detail": "{\"visible\":true,\"previousVisible\":true,\"focused\":true,\"tail\":329}"
+      "detail": "{\"visible\":true,\"previousVisible\":true,\"focused\":true,\"tail\":330}"
     },
     {
       "name": "repeat_add_3",
@@ -249,7 +249,7 @@
     {
       "name": "repeat_add_7",
       "pass": true,
-      "detail": "{\"visible\":true,\"previousVisible\":true,\"focused\":true,\"tail\":329}"
+      "detail": "{\"visible\":true,\"previousVisible\":true,\"focused\":true,\"tail\":330}"
     },
     {
       "name": "repeat_add_8",
