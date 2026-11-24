@@ -29,7 +29,7 @@
     {
       "name": "empty_hint_v19",
       "pass": true,
-      "detail": "点 + 新建 · 长按 + 语音 · 双击划线 · 长按菜单"
+      "detail": "点 + 新建 · 双击划线 · 长按菜单"
     },
     {
       "name": "fab_empty_creates_ui_item",

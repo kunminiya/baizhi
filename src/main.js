@@ -11,10 +11,9 @@ import init, {
 } from './generated/baizhi_core.js'
 import wasmUrl from './generated/baizhi_core_bg.wasm?url'
 
-import { Capacitor, registerPlugin } from '@capacitor/core'
+import { Capacitor } from '@capacitor/core'
 
 const IS_NATIVE = Capacitor.isNativePlatform()
-const VoiceRecorder = registerPlugin('VoiceRecorder')
 const SYNC_KEY = 'baizhi.sync.v1'
 /** @type {{ Haptics: any, ImpactStyle: any } | null} */
 let hapticsMod = null
@@ -150,7 +149,7 @@ app.innerHTML = `
     <div class="empty-state" id="empty">
       <div class="empty-glyph" aria-hidden="true"></div>
       <p class="empty-title">轻写下第一件事</p>
-      <p class="empty-sub">点 + 新建 · 长按 + 语音 · 双击划线 · 长按菜单</p>
+      <p class="empty-sub">点 + 新建 · 双击划线 · 长按菜单</p>
     </div>
     <ul class="todo-list" id="list"></ul>
     <div class="tap-catcher" id="tapCatcher" aria-hidden="true"></div>
@@ -320,11 +319,6 @@ function setSyncState(state, detail = '') {
 function syncEndpoint() {
   const base = syncConfig.url.replace(/\/+$/, '')
   return base.endsWith('/api/sync') ? base : `${base}/api/sync`
-}
-
-function sttEndpoint() {
-  const base = syncConfig.url.replace(/\/+$/, '').replace(/\/api\/sync$/, '')
-  return `${base}/api/stt`
 }
 
 async function syncNow({ silent = true } = {}) {
@@ -1352,201 +1346,18 @@ function addTodo({ focus = true } = {}) {
   return todo
 }
 
-// Voice quick capture (long-press FAB): native Android MediaRecorder / Web MediaRecorder -> Cloud SenseVoiceSmall STT
-/** @type {null | 'native' | 'web'} */
-let voiceMode = null
-/** @type {MediaRecorder | null} */
-let webRecorder = null
-/** @type {Blob[]} */
-let webChunks = []
-/** @type {MediaStream | null} */
-let webStream = null
-
-function resetVoiceUi() {
-  voiceMode = null
-  fab.classList.remove('is-recording')
-  if (webStream) {
-    webStream.getTracks().forEach((t) => t.stop())
-    webStream = null
-  }
-  webRecorder = null
-  webChunks = []
-}
-
-async function sendAudioToStt(base64, mimeType) {
-  showToast('⏳ 正在识别…', { durationMs: 0 })
-  try {
-    const res = await fetch(sttEndpoint(), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${syncConfig.token}`,
-      },
-      body: JSON.stringify({ audio: base64, mimeType }),
-    })
-    if (!res.ok) {
-      throw new Error(res.status === 401 ? '同步口令错误' : `HTTP ${res.status}`)
-    }
-    const data = await res.json()
-    const text = trim(String(data.text || ''))
-    hideToast()
-    if (!isMeaningful(text)) {
-      showToast('未识别到清晰语音', { durationMs: 2000 })
-      return
-    }
-    if (activeFilter === 'done') activeFilter = 'all'
-    const todo = todos.add()
-    todos.set_text(todo.id, text)
-    saveDirty = true
-    flushPendingSave()
-    renderAll()
-    paper.scrollTop = paper.scrollHeight
-    showToast('🎙 已记下', { durationMs: 1800 })
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : '网络异常'
-    showToast(`语音识别失败：${msg}`, { durationMs: 2600 })
-  }
-}
-
-async function finishVoiceCapture() {
-  const mode = voiceMode
-  if (!mode) return
-  hapticLight()
-  if (mode === 'native') {
-    voiceMode = null
-    fab.classList.remove('is-recording')
-    try {
-      const result = await VoiceRecorder.stop()
-      if (result?.base64) {
-        await sendAudioToStt(result.base64, result.mimeType || 'audio/mp4')
-      } else {
-        showToast('录音过短，请重试', { durationMs: 1800 })
-      }
-    } catch {
-      showToast('录音过短，请重试', { durationMs: 1800 })
-    }
-    return
-  }
-  if (mode === 'web' && webRecorder && webRecorder.state !== 'inactive') {
-    webRecorder.stop()
-  }
-}
-
-async function startVoiceCapture() {
-  hideCtxMenu()
-  if (!isSyncConfigured()) {
-    showToast('请先点右上角圆点配置云同步以启用语音', { durationMs: 2800 })
-    openSyncSheet()
-    return
-  }
-
-  if (IS_NATIVE) {
-    try {
-      await VoiceRecorder.start()
-      voiceMode = 'native'
-      hapticLight()
-      fab.classList.add('is-recording')
-      showToast('🎙 正在录音… 说完点完成或红钮', {
-        actionLabel: '完成',
-        onAction: () => finishVoiceCapture(),
-        durationMs: 0,
-      })
-    } catch (err) {
-      resetVoiceUi()
-      const msg = String(err?.message || err || '')
-      if (msg.includes('permission')) {
-        showToast('需要麦克风权限才能语音速记', { durationMs: 2600 })
-      } else {
-        showToast('启动录音失败，请重试', { durationMs: 2200 })
-      }
-    }
-    return
-  }
-
-  // Web browser MediaRecorder -> same cloud STT
-  if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-    addTodo({ focus: true })
-    showToast('当前浏览器不支持录音，已打开输入框', { durationMs: 2400 })
-    return
-  }
-  try {
-    webStream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    webChunks = []
-    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-      ? 'audio/webm;codecs=opus'
-      : MediaRecorder.isTypeSupported('audio/mp4')
-        ? 'audio/mp4'
-        : ''
-    webRecorder = mimeType ? new MediaRecorder(webStream, { mimeType }) : new MediaRecorder(webStream)
-    webRecorder.ondataavailable = (ev) => {
-      if (ev.data && ev.data.size > 0) webChunks.push(ev.data)
-    }
-    webRecorder.onstop = async () => {
-      const blob = new Blob(webChunks, { type: webRecorder?.mimeType || 'audio/webm' })
-      resetVoiceUi()
-      if (blob.size < 200) {
-        showToast('录音过短，请重试', { durationMs: 1800 })
-        return
-      }
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        const res = String(reader.result || '')
-        const b64 = res.includes(',') ? res.split(',')[1] : res
-        if (b64) sendAudioToStt(b64, blob.type || 'audio/webm')
-      }
-      reader.readAsDataURL(blob)
-    }
-    webRecorder.start()
-    voiceMode = 'web'
-    fab.classList.add('is-recording')
-    showToast('🎙 正在录音… 说完点完成或红钮', {
-      actionLabel: '完成',
-      onAction: () => finishVoiceCapture(),
-      durationMs: 0,
-    })
-  } catch {
-    resetVoiceUi()
-    addTodo({ focus: true })
-    showToast('无法获取麦克风权限，已打开输入框', { durationMs: 2400 })
-  }
-}
-
-let fabPressTimer = 0
-let suppressFabClickUntil = 0
-
-function cancelFabPress() {
-  if (fabPressTimer) {
-    clearTimeout(fabPressTimer)
-    fabPressTimer = 0
-  }
-}
-
 function activateFab(e) {
   e?.preventDefault?.()
   e?.stopPropagation?.()
-  if (performance.now() < suppressFabClickUntil) return
-  if (voiceMode) {
-    finishVoiceCapture()
-    return
-  }
   hideCtxMenu()
   addTodo({ focus: true })
 }
 
 fab.addEventListener('pointerdown', (e) => {
+  // Keep the current editor / IME focused until the new editor is ready.
   e.preventDefault()
   e.stopPropagation()
-  if (voiceMode) return
-  cancelFabPress()
-  fabPressTimer = window.setTimeout(() => {
-    fabPressTimer = 0
-    suppressFabClickUntil = performance.now() + 800
-    startVoiceCapture()
-  }, LONG_MS)
 })
-fab.addEventListener('pointerup', cancelFabPress)
-fab.addEventListener('pointercancel', cancelFabPress)
-fab.addEventListener('pointerleave', cancelFabPress)
 fab.addEventListener('click', activateFab)
 
 // Hidden backup export
