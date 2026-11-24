@@ -11,9 +11,10 @@ import init, {
 } from './generated/baizhi_core.js'
 import wasmUrl from './generated/baizhi_core_bg.wasm?url'
 
-import { Capacitor } from '@capacitor/core'
+import { Capacitor, registerPlugin } from '@capacitor/core'
 
 const IS_NATIVE = Capacitor.isNativePlatform()
+const VoiceRecorder = registerPlugin('VoiceRecorder')
 const SYNC_KEY = 'baizhi.sync.v1'
 /** @type {{ Haptics: any, ImpactStyle: any } | null} */
 let hapticsMod = null
@@ -319,6 +320,11 @@ function setSyncState(state, detail = '') {
 function syncEndpoint() {
   const base = syncConfig.url.replace(/\/+$/, '')
   return base.endsWith('/api/sync') ? base : `${base}/api/sync`
+}
+
+function sttEndpoint() {
+  const base = syncConfig.url.replace(/\/+$/, '').replace(/\/api\/sync$/, '')
+  return `${base}/api/stt`
 }
 
 async function syncNow({ silent = true } = {}) {
@@ -1346,83 +1352,162 @@ function addTodo({ focus = true } = {}) {
   return todo
 }
 
-// Voice quick capture (long-press FAB)
-/** @type {any} */
-let activeRecognition = null
+// Voice quick capture (long-press FAB): native Android MediaRecorder / Web MediaRecorder -> Cloud SenseVoiceSmall STT
+/** @type {null | 'native' | 'web'} */
+let voiceMode = null
+/** @type {MediaRecorder | null} */
+let webRecorder = null
+/** @type {Blob[]} */
+let webChunks = []
+/** @type {MediaStream | null} */
+let webStream = null
 
-function stopVoiceCapture() {
+function resetVoiceUi() {
+  voiceMode = null
   fab.classList.remove('is-recording')
-  if (activeRecognition) {
-    try {
-      activeRecognition.stop()
-    } catch {}
-    activeRecognition = null
+  if (webStream) {
+    webStream.getTracks().forEach((t) => t.stop())
+    webStream = null
+  }
+  webRecorder = null
+  webChunks = []
+}
+
+async function sendAudioToStt(base64, mimeType) {
+  showToast('⏳ 正在识别…', { durationMs: 0 })
+  try {
+    const res = await fetch(sttEndpoint(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${syncConfig.token}`,
+      },
+      body: JSON.stringify({ audio: base64, mimeType }),
+    })
+    if (!res.ok) {
+      throw new Error(res.status === 401 ? '同步口令错误' : `HTTP ${res.status}`)
+    }
+    const data = await res.json()
+    const text = trim(String(data.text || ''))
+    hideToast()
+    if (!isMeaningful(text)) {
+      showToast('未识别到清晰语音', { durationMs: 2000 })
+      return
+    }
+    if (activeFilter === 'done') activeFilter = 'all'
+    const todo = todos.add()
+    todos.set_text(todo.id, text)
+    saveDirty = true
+    flushPendingSave()
+    renderAll()
+    paper.scrollTop = paper.scrollHeight
+    showToast('🎙 已记下', { durationMs: 1800 })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : '网络异常'
+    showToast(`语音识别失败：${msg}`, { durationMs: 2600 })
   }
 }
 
-function startVoiceCapture() {
-  hideCtxMenu()
-  const SpeechRec = /** @type {any} */ (window).SpeechRecognition || /** @type {any} */ (window).webkitSpeechRecognition
-  if (!SpeechRec) {
-    addTodo({ focus: true })
-    showToast('已打开输入框（可直接点键盘语音）', { durationMs: 2400 })
+async function finishVoiceCapture() {
+  const mode = voiceMode
+  if (!mode) return
+  hapticLight()
+  if (mode === 'native') {
+    voiceMode = null
+    fab.classList.remove('is-recording')
+    try {
+      const result = await VoiceRecorder.stop()
+      if (result?.base64) {
+        await sendAudioToStt(result.base64, result.mimeType || 'audio/mp4')
+      } else {
+        showToast('录音过短，请重试', { durationMs: 1800 })
+      }
+    } catch {
+      showToast('录音过短，请重试', { durationMs: 1800 })
+    }
     return
   }
-  stopVoiceCapture()
-  hapticLight()
-  fab.classList.add('is-recording')
-  showToast('正在聆听…', { actionLabel: '停止', onAction: stopVoiceCapture, durationMs: 0 })
+  if (mode === 'web' && webRecorder && webRecorder.state !== 'inactive') {
+    webRecorder.stop()
+  }
+}
 
-  let finalTranscript = ''
-  let latestTranscript = ''
-  const rec = new SpeechRec()
-  rec.lang = 'zh-CN'
-  rec.interimResults = true
-  rec.continuous = false
-  activeRecognition = rec
-
-  rec.onresult = (ev) => {
-    let interim = ''
-    for (let i = ev.resultIndex; i < ev.results.length; i++) {
-      const chunk = ev.results[i][0]?.transcript || ''
-      if (ev.results[i].isFinal) finalTranscript += chunk
-      else interim += chunk
-    }
-    latestTranscript = (finalTranscript + interim).trim()
-    if (latestTranscript) {
-      showToast(`🎙 ${latestTranscript}`, { actionLabel: '完成', onAction: stopVoiceCapture, durationMs: 0 })
-    }
+async function startVoiceCapture() {
+  hideCtxMenu()
+  if (!isSyncConfigured()) {
+    showToast('请先点右上角圆点配置云同步以启用语音', { durationMs: 2800 })
+    openSyncSheet()
+    return
   }
 
-  rec.onerror = () => {
-    stopVoiceCapture()
-    hideToast()
+  if (IS_NATIVE) {
+    try {
+      await VoiceRecorder.start()
+      voiceMode = 'native'
+      hapticLight()
+      fab.classList.add('is-recording')
+      showToast('🎙 正在录音… 说完点完成或红钮', {
+        actionLabel: '完成',
+        onAction: () => finishVoiceCapture(),
+        durationMs: 0,
+      })
+    } catch (err) {
+      resetVoiceUi()
+      const msg = String(err?.message || err || '')
+      if (msg.includes('permission')) {
+        showToast('需要麦克风权限才能语音速记', { durationMs: 2600 })
+      } else {
+        showToast('启动录音失败，请重试', { durationMs: 2200 })
+      }
+    }
+    return
+  }
+
+  // Web browser MediaRecorder -> same cloud STT
+  if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
     addTodo({ focus: true })
-    showToast('无法直录语音，已打开输入框', { durationMs: 2400 })
+    showToast('当前浏览器不支持录音，已打开输入框', { durationMs: 2400 })
+    return
   }
-
-  rec.onend = () => {
-    fab.classList.remove('is-recording')
-    activeRecognition = null
-    const text = trim(finalTranscript || latestTranscript)
-    hideToast()
-    if (isMeaningful(text)) {
-      const todo = todos.add()
-      todos.set_text(todo.id, text)
-      saveDirty = true
-      flushPendingSave()
-      renderAll()
-      paper.scrollTop = paper.scrollHeight
-      showToast('语音已记下', { durationMs: 1800 })
-    }
-  }
-
   try {
-    rec.start()
+    webStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    webChunks = []
+    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+      ? 'audio/webm;codecs=opus'
+      : MediaRecorder.isTypeSupported('audio/mp4')
+        ? 'audio/mp4'
+        : ''
+    webRecorder = mimeType ? new MediaRecorder(webStream, { mimeType }) : new MediaRecorder(webStream)
+    webRecorder.ondataavailable = (ev) => {
+      if (ev.data && ev.data.size > 0) webChunks.push(ev.data)
+    }
+    webRecorder.onstop = async () => {
+      const blob = new Blob(webChunks, { type: webRecorder?.mimeType || 'audio/webm' })
+      resetVoiceUi()
+      if (blob.size < 200) {
+        showToast('录音过短，请重试', { durationMs: 1800 })
+        return
+      }
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        const res = String(reader.result || '')
+        const b64 = res.includes(',') ? res.split(',')[1] : res
+        if (b64) sendAudioToStt(b64, blob.type || 'audio/webm')
+      }
+      reader.readAsDataURL(blob)
+    }
+    webRecorder.start()
+    voiceMode = 'web'
+    fab.classList.add('is-recording')
+    showToast('🎙 正在录音… 说完点完成或红钮', {
+      actionLabel: '完成',
+      onAction: () => finishVoiceCapture(),
+      durationMs: 0,
+    })
   } catch {
-    stopVoiceCapture()
+    resetVoiceUi()
     addTodo({ focus: true })
-    showToast('已打开输入框（可直接点键盘语音）', { durationMs: 2400 })
+    showToast('无法获取麦克风权限，已打开输入框', { durationMs: 2400 })
   }
 }
 
@@ -1440,8 +1525,8 @@ function activateFab(e) {
   e?.preventDefault?.()
   e?.stopPropagation?.()
   if (performance.now() < suppressFabClickUntil) return
-  if (activeRecognition) {
-    stopVoiceCapture()
+  if (voiceMode) {
+    finishVoiceCapture()
     return
   }
   hideCtxMenu()
@@ -1451,7 +1536,7 @@ function activateFab(e) {
 fab.addEventListener('pointerdown', (e) => {
   e.preventDefault()
   e.stopPropagation()
-  if (activeRecognition) return
+  if (voiceMode) return
   cancelFabPress()
   fabPressTimer = window.setTimeout(() => {
     fabPressTimer = 0
